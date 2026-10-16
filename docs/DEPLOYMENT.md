@@ -103,3 +103,15 @@ npm run test:native
 `test:native` 创建一个短暂的 X11 测试窗口，通过域名用 Chromium 强制 TURN 连接实际桌面，校验视频像素和系统输入，再关闭窗口并恢复之前焦点。会产生一次真实控制会话，请在主机空闲时运行。当前桌面宽高比例可能不是 16:9，流畅档按宽度缩放，测试时实际视频为 1280×608。
 
 主机端断线会自动退避重连；系统桌面注销后应重新登录桌面，必要时修改 DISPLAY。无 GPU 硬编的 4 核服务器不保证持续 30 FPS；与 Guacamole 同时使用会共享同一个桌面焦点和输入状态。
+
+## 首次初始化与管理
+
+打开站点后按向导完成：验证部署密钥 → 创建管理员账号（密码至少 12 位）→ 确认连接参数 → 完成。部署密钥是 `/etc/remote-console/environment` 中原有 `CONTROL_TOKEN`（本地为 `.env`）；仅在首次设置时使用，以防公开域名被他人抢先注册。初始化后入口关闭，日常使用账号密码登录，浏览器登录有效期 12 小时。
+
+侧栏「管理设置」提供连接参数、Token 创建/撤销、活动会话断开、修改密码和最近操作记录。控制 Token 仅能连接桌面，不能管理系统；主机 Token 仅能注册主机。完整 Token 只在创建时显示一次。轮换本机 Token 时先创建主机 Token，更新 `/etc/remote-console/agent-environment`，重启 `remote-console-agent`，确认在线后再撤销旧 Token。撤销会立即断开使用它的连接。修改密码会注销所有浏览器登录。
+
+配置、密码哈希、Token 哈希和登录会话保存在 SQLite；生产路径 `/var/lib/remote-console/control.sqlite`，由 systemd `StateDirectory` 管理。本地默认 `data/control.sqlite`，可用 `DATA_PATH` 覆盖。首次启动自动迁移原有主机/控制 Token 和 TURN 配置，后续以数据库设置为准；撤销的 Token 不会因重启重新启用。备份时使用 SQLite 在线备份，或停止 API 后备份整个状态目录；备份包含 TURN 密钥，应限制访问权限。不要删除数据库来升级。
+
+修改 TURN 参数只更新 API 生成连接凭据所用配置，不会自动重配 coturn；更换共享密钥时必须同步修改 TURN 服务。新连接使用更新后的参数。
+
+浏览器回归测试 `npm run test:e2e` / `npm run test:native` 需要通过环境变量提供 `SMOKE_USERNAME`、`SMOKE_PASSWORD`，不会自动初始化线上账号。`node scripts/auth-smoke.mjs` 仅用于 localhost:5173 对应的全新、可丢弃测试数据库，验证完整向导与管理操作，禁止连接生产数据。

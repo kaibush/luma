@@ -45,3 +45,9 @@ quality: `responsive` / `balanced` / `sharp`，默认 responsive。主机离线�
 `KeyboardEvent.code` 表示物理键位；原生端负责平台扫描码和布局映射。text 表示文本提交（最多 2048 字符），不等同于剪贴板授权。浏览器保留 Esc 以退出全屏，工具栏可发送远端 Esc。
 
 浏览器共享端只验证/展示输入；原生 InputSink 必须额外执行允许键位映射、速率限制、会话租约检查和断线 releaseAll，不能执行任意字符串为 shell 命令。
+
+## 管理员认证
+
+`GET /api/auth/me` 返回初始化状态和当前管理员。首次设置使用 `POST /api/auth/setup/unlock`（`key` 为原有 CONTROL_TOKEN）取得 10 分钟 setup Cookie，再调用 `/api/auth/setup/complete` 提交账号、密码和设置；完成后禁止再次初始化。`POST /api/auth/login` 使用 username/password 获取 12 小时 HttpOnly/SameSite=Strict Cookie，生产添加 Secure。`POST /api/auth/logout` 注销当前会话；`POST /api/auth/password` 验证 currentPassword 并设置 password，注销全部浏览器登录。
+
+Cookie 控制端 WS 首帧使用空 `token`，服务端验证 Cookie 和 Origin。Bearer Token 仍兼容 API/Agent。浏览器修改请求必须携带 `X-Remote-Request: 1`，Origin 必须在白名单。管理接口仅允许管理员 Cookie：`GET/PUT /api/manage/settings`、`GET/POST /api/manage/tokens`、`DELETE /api/manage/tokens/:id`、`GET /api/manage/connections`、`GET /api/manage/audit`。Token 创建提交 name、scope（host/control）、可选 days（1–365）；返回的 value 仅可获得一次，列表只显示元数据。撤销和登录注销同步断开相关 WS。

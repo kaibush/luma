@@ -8,11 +8,14 @@ export async function api<T>(
   const response = await fetch(`/api${path}`, {
     ...init,
     headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      'X-Remote-Request': '1',
     },
   })
   if (!response.ok) {
+    if (response.status === 401 && !token)
+      window.dispatchEvent(new Event('remote-auth-expired'))
     const body = await response.json().catch(() => ({}))
     throw new Error(body.error || `请求失败 (${response.status})`)
   }

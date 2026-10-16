@@ -5,6 +5,7 @@ import assert from 'node:assert/strict'
 const require = createRequire(new URL('../apps/web/package.json', import.meta.url))
 const { chromium } = require('playwright')
 const env = Object.fromEntries(readFileSync(new URL('../.env', import.meta.url), 'utf8').split('\n').filter(l => l && !l.startsWith('#')).map(l => { const i = l.indexOf('='); return [l.slice(0, i), l.slice(i + 1)] }))
+if (!process.env.SMOKE_USERNAME || !process.env.SMOKE_PASSWORD) throw new Error('Set SMOKE_USERNAME and SMOKE_PASSWORD for an initialized test account; this test never initializes production.')
 const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--autoplay-policy=no-user-gesture-required'], ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}) })
 const errors = []
 try {
@@ -28,8 +29,9 @@ try {
   await host.getByText('在线，等待连接', {exact: true}).waitFor()
   await controller.setViewportSize({width: 844, height: 390})
   await controller.goto(base)
-  await controller.getByLabel('控制端密钥', {exact: true}).fill(env.CONTROL_TOKEN)
-  await controller.getByRole('button', {name: '进入工作空间'}).click()
+  await controller.getByLabel('账号', {exact:true}).fill(process.env.SMOKE_USERNAME)
+  await controller.getByLabel('密码', {exact:true}).fill(process.env.SMOKE_PASSWORD)
+  await controller.getByRole('button', {name:'登录',exact:true}).click()
   const hostCard = controller.locator('[data-slot="card"]').filter({has: controller.getByText('Smoke test host', {exact: true})})
   await hostCard.getByRole('button', {name: '连接桌面', exact: true}).click()
   await controller.getByText('已连接', {exact: true}).waitFor({timeout: 30000})

@@ -9,3 +9,7 @@ test-results/
 .venv/
 __pycache__/
 *.pyc
+
+data/
+*.sqlite
+*.sqlite-*

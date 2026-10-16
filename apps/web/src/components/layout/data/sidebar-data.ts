@@ -1,4 +1,4 @@
-import { Monitor, Radio, Command } from 'lucide-react'
+import { Monitor, Radio, Command, Settings } from 'lucide-react'
 import { type SidebarData } from '../types'
 
 export const sidebarData: SidebarData = {
@@ -10,6 +10,7 @@ export const sidebarData: SidebarData = {
       items: [
         { title: '我的主机', url: '/', icon: Monitor },
         { title: '接入此电脑', url: '/host', icon: Radio },
+        { title: '管理设置', url: '/management', icon: Settings },
       ],
     },
   ],

@@ -6,8 +6,8 @@ import { once } from 'node:events'
 import assert from 'node:assert/strict'
 const require=createRequire(new URL('../apps/web/package.json',import.meta.url))
 const {chromium}=require('playwright')
-const env=Object.fromEntries(readFileSync('/etc/remote-console/environment','utf8').split('\n').filter(l=>l.includes('=')).map(l=>{const i=l.indexOf('=');return [l.slice(0,i),l.slice(i+1)]}))
 const base=process.env.SMOKE_BASE_URL || 'https://rc.lvyrix.com'
+if (!process.env.SMOKE_USERNAME || !process.env.SMOKE_PASSWORD) throw new Error('Set SMOKE_USERNAME and SMOKE_PASSWORD for an initialized test account; this test never initializes production.')
 const dir=mkdtempSync(`${tmpdir()}/remote-input-`), output=`${dir}/events.jsonl`
 const fixture=spawn('apps/agent/.venv/bin/python',['apps/agent/input_fixture.py'],{env:{...process.env,DISPLAY:':10',XAUTHORITY:'/root/.Xauthority',FIXTURE_OUTPUT:output},stdio:['ignore','pipe','inherit']})
 const metadata=await Promise.race([once(fixture.stdout,'data').then(([data])=>JSON.parse(data.toString())),new Promise((_,reject)=>setTimeout(()=>reject(new Error('X11 fixture timeout')),10000).unref())])
@@ -20,8 +20,9 @@ try {
   // Force TURN to verify the relay path, even though test browser is on this server.
   await page.addInitScript(()=>{const Original=window.RTCPeerConnection;window.RTCPeerConnection=class extends Original{constructor(config){super({...config,iceTransportPolicy:'relay'})}}})
   await page.goto(base)
-  await page.getByLabel('控制端密钥',{exact:true}).fill(env.CONTROL_TOKEN)
-  await page.getByRole('button',{name:'进入工作空间'}).click()
+  await page.getByLabel('账号', {exact:true}).fill(process.env.SMOKE_USERNAME)
+  await page.getByLabel('密码', {exact:true}).fill(process.env.SMOKE_PASSWORD)
+  await page.getByRole('button', {name:'登录',exact:true}).click()
   const card=page.locator('[data-slot="card"]').filter({has:page.getByText('本机 Linux 桌面',{exact:true})})
   await card.getByRole('button',{name:'连接桌面',exact:true}).click()
   await page.getByText('已连接',{exact:true}).waitFor({timeout:30000})
@@ -51,7 +52,7 @@ try {
   assert.ok(trace.some(e=>e.type===2&&e.detail===metadata.control),'held modifier reached fixture')
   assert.ok(trace.some(e=>e.type===3&&e.detail===metadata.control),'disconnect releases modifier')
   assert.deepEqual(errors,[])
-  console.log('PASS: public domain + forced TURN, actual X11 video pixels, system mouse/key/text input, disconnect releases held keys.',actual)
+  console.log('PASS: configured URL + forced TURN, actual X11 video pixels, system mouse/key/text input, disconnect releases held keys.',actual)
 } finally {
   await browser.close()
   const exit=once(fixture,'exit');fixture.kill('SIGTERM');await exit

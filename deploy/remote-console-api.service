@@ -6,6 +6,9 @@ After=network.target
 Type=simple
 WorkingDirectory=/root/project/github/kaibush/remote-console
 Environment=NODE_ENV=production
+Environment=DATA_PATH=/var/lib/remote-console/control.sqlite
+StateDirectory=remote-console
+StateDirectoryMode=0700
 EnvironmentFile=/etc/remote-console/environment
 ExecStart=/root/.nvm/versions/node/v24.18.0/bin/node apps/server/dist/index.js
 Restart=on-failure

@@ -32,19 +32,19 @@ import {
   EmptyDescription,
   EmptyMedia,
 } from '@/components/ui/empty'
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
+import { Field, FieldLabel } from '@/components/ui/field'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
+import { useRemoteAuth, request } from '@/features/access/auth'
 import { api } from './api'
 import { Viewer } from './viewer'
 
 export function RemoteDashboard() {
-  const [token, setToken] = useState(''),
-    [draft, setDraft] = useState(''),
-    [hosts, setHosts] = useState<Host[]>([])
+  const { state, logout } = useRemoteAuth()
+  const token = ''
+  const [hosts, setHosts] = useState<Host[]>([])
   const [loading, setLoading] = useState(false),
     [error, setError] = useState(''),
     [quality, setQuality] = useState<Quality>('responsive')
@@ -54,7 +54,6 @@ export function RemoteDashboard() {
     iceServers: IceServer[]
   } | null>(null)
   useEffect(() => {
-    if (!token) return
     let disposed = false
     const refresh = async () => {
       try {
@@ -67,6 +66,12 @@ export function RemoteDashboard() {
         if (!disposed) setError((e as Error).message)
       }
     }
+    void refresh()
+    void request<{ defaultQuality: Quality }>('/preferences')
+      .then((p) => {
+        if (!disposed) setQuality(p.defaultQuality)
+      })
+      .catch(() => {})
     const timer = setInterval(() => void refresh(), 5000)
     return () => {
       disposed = true
@@ -76,10 +81,8 @@ export function RemoteDashboard() {
   const refresh = async () => {
     setLoading(true)
     try {
-      const data = await api<{ hosts: Host[] }>('/hosts', token || draft)
+      const data = await api<{ hosts: Host[] }>('/hosts', token)
       setHosts(data.hosts)
-      setToken(token || draft)
-      setDraft('')
       setError('')
     } catch (e) {
       setError((e as Error).message)
@@ -106,22 +109,12 @@ export function RemoteDashboard() {
   return (
     <>
       <Header>
-        <span className='text-sm font-medium'>Remote Console</span>
+        <span className='text-sm font-medium'>{state.workspaceName}</span>
         <div className='ms-auto flex items-center gap-2'>
           <Badge variant='outline'>远程桌面</Badge>
-          {token && (
-            <Button
-              variant='ghost'
-              size='sm'
-              onClick={() => {
-                setToken('')
-                setHosts([])
-                setError('')
-              }}
-            >
-              退出工作空间
-            </Button>
-          )}
+          <Button variant='ghost' size='sm' onClick={() => void logout()}>
+            退出登录
+          </Button>
           <ThemeSwitch />
         </div>
       </Header>
@@ -149,7 +142,7 @@ export function RemoteDashboard() {
             {
               icon: Monitor,
               title: '在线主机',
-              value: token ? `${hosts.length} 台` : '等待验证',
+              value: `${hosts.length} 台`,
               description: '由已连接的共享端实时提供',
             },
             {
@@ -181,43 +174,6 @@ export function RemoteDashboard() {
             </Card>
           ))}
         </div>
-        {!token && (
-          <Card>
-            <CardHeader>
-              <CardTitle>连接到你的控制服务</CardTitle>
-              <CardDescription>
-                输入部署时配置的控制端密钥。密钥仅保存在当前页面内存中。
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form
-                className='flex flex-col items-end gap-3 sm:flex-row'
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  void refresh()
-                }}
-              >
-                <FieldGroup>
-                  <Field>
-                    <FieldLabel htmlFor='control-token'>控制端密钥</FieldLabel>
-                    <Input
-                      id='control-token'
-                      type='password'
-                      autoComplete='off'
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      placeholder='CONTROL_TOKEN'
-                      required
-                    />
-                  </Field>
-                </FieldGroup>
-                <Button type='submit' disabled={loading || !draft}>
-                  {loading ? '验证中…' : '进入工作空间'}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-        )}
         {error && (
           <Alert variant='destructive' role='alert'>
             <AlertTitle>连接遇到问题</AlertTitle>
@@ -232,7 +188,7 @@ export function RemoteDashboard() {
                 选择在线主机，开始远程会话。
               </p>
             </div>
-            {token && (
+            {state.user && (
               <Button
                 variant='outline'
                 size='sm'
@@ -267,9 +223,7 @@ export function RemoteDashboard() {
                 <EmptyMedia variant='icon'>
                   <Monitor />
                 </EmptyMedia>
-                <EmptyTitle>
-                  {token ? '还没有在线主机' : '验证后查看在线主机'}
-                </EmptyTitle>
+                <EmptyTitle>还没有在线主机</EmptyTitle>
                 <EmptyDescription>
                   等待系统主机端上线，或在被控电脑打开「接入此电脑」进行浏览器共享。
                 </EmptyDescription>
