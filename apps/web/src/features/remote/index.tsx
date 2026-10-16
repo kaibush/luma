@@ -108,7 +108,7 @@ export function RemoteDashboard() {
       <Header>
         <span className='text-sm font-medium'>Remote Console</span>
         <div className='ms-auto flex items-center gap-2'>
-          <Badge variant='outline'>开发预览</Badge>
+          <Badge variant='outline'>远程桌面</Badge>
           {token && (
             <Button
               variant='ghost'
@@ -271,7 +271,7 @@ export function RemoteDashboard() {
                   {token ? '还没有在线主机' : '验证后查看在线主机'}
                 </EmptyTitle>
                 <EmptyDescription>
-                  在被控电脑打开「接入此电脑」，授权共享一个屏幕，再回到这里连接。
+                  等待系统主机端上线，或在被控电脑打开「接入此电脑」进行浏览器共享。
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>
@@ -288,12 +288,16 @@ export function RemoteDashboard() {
                     </div>
                     <CardTitle>{host.name}</CardTitle>
                     <CardDescription>
-                      浏览器共享端 · 视频与输入测试
+                      {host.kind === 'linux-x11'
+                        ? 'Linux 系统桌面 · 实时控制'
+                        : '浏览器共享端 · 视频与输入测试'}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <p className='text-sm text-muted-foreground'>
-                      支持实时画面；系统级鼠标键盘控制需接入原生 Agent。
+                      {host.capabilities.systemInput
+                        ? '支持系统鼠标、键盘与英文文本。当前主机使用软件编码，最高 30 FPS。'
+                        : '支持实时画面；此浏览器共享端仅用于输入测试。'}
                     </p>
                   </CardContent>
                   <CardFooter>
@@ -313,9 +317,10 @@ export function RemoteDashboard() {
         </section>
         <Alert>
           <ShieldCheck />
-          <AlertTitle>当前版本：远控架构与链路验证</AlertTitle>
+          <AlertTitle>连接你的实际桌面</AlertTitle>
           <AlertDescription>
-            此版本用于验证视频流、移动端操作和输入协议。浏览器共享端无法控制操作系统；真实桌面控制需要安装后续的原生主机端。
+            选择 Linux
+            系统桌面即可查看并操作本机。浏览器共享端仍仅用于链路测试；当前系统文本输入支持英文和数字。
           </AlertDescription>
         </Alert>
       </Main>

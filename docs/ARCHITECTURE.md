@@ -1,5 +1,7 @@
 # 架构与扩展
 
+当前已新增 `apps/agent`：Python aiortc + MSS 直接采集 Linux X11 桌面，XTest 注入系统鼠标键盘，沿用同一信令与输入协议。生产实例连接 XFCE `:10`，软件编码最高 30 FPS，TURN 中继已启用并测试。下文 Rust/硬编与其他平台方案仍为后续设计。
+
 ## 核心决策
 
 前端按用户要求克隆 satnaing/shadcn-admin。控制面选 Fastify + TypeScript，与共享协议包一起维护，迭代和接口验证成本低。视频采集/编码/传输独立于 API，换成 Go/Rust API 本身不会改善桌面流畅度。当前实现不依赖 VNC。
@@ -17,7 +19,7 @@ flowchart LR
   Agent --> Input[操作系统键鼠注入]
 ```
 
-图中的系统采集/注入是目标原生实现。当前 `BrowserHost` 用 getDisplayMedia 与浏览器编码器验证 WebRTC，输入仅发送到测试面板。浏览器决定编码器，无法保证使用硬件编码。
+Linux X11 主机端已实现系统采集/注入。`BrowserHost` 仍是 getDisplayMedia 的浏览器测试适配器，输入只发送到测试面板。当前 X11 端用 aiortc 软件编码；硬件编码尚未接入。
 
 ## 模块边界
 
@@ -27,7 +29,7 @@ flowchart LR
 | 控制面 | Fastify，单实例内存主机/会话表 | 抽取 HostRepository / SessionRepository，PostgreSQL 元数据、Redis 租约与实例消息 |
 | 信令 | WSS 首帧认证，offer/answer/ICE 定向转发 | 版本协商、设备身份、重新协商、ICE restart |
 | WebRTC 客户端 | `RemotePeer` 封装协商、双输入通道、统计 | 自适应档位策略、音频、多屏、重连退避 |
-| 主机实现 | BrowserHost 测试端 | 原生桌面 Agent（下面的接口和平台选择） |
+| 主机实现 | Linux X11 实际主机端 + BrowserHost 测试端 | 原生桌面 Agent（下面的接口和平台选择） |
 | 中继 | 可选 coturn REST 短期凭据 | 区域选择、容量与带宽告警、凭据刷新 |
 
 扩展时保持 `Capture → Encoder → WebRTC Sender` 与 `DataChannel → InputSink` 分离。不要把媒体帧或鼠标事件写入 React 全局状态、HTTP 队列或数据库。设备能力应从原生 Agent 注册并由服务端校验；当前服务端明确标记 browser / systemInput=false，不能只修改 UI 标签宣称支持系统控制。
@@ -83,7 +85,7 @@ HostRuntime.startSession(lease, capabilities) / stopSession(reason)
 ## 阶段划分
 
 1. **当前基础版本**：管理端、鉴权与信令、浏览器视频链路、输入协议、移动界面、统计与自动测试。
-2. **原生平台 MVP**：确认目标 OS，完成采集→硬编→WebRTC→系统输入；多显示器/DPI、权限、失焦释放；进行真机性能验收。
+2. **原生平台 MVP**：Linux X11 采集→软件编码→WebRTC→系统输入已完成；后续增加硬编和其他平台；多显示器/DPI、权限、失焦释放；进行真机性能验收。
 3. **稳定性**：ICE restart、断网重连、动态码率/分辨率、后台恢复、触控板模式、长按和双指手势、音频。
 4. **多人/部署扩展**：设备配对与证书轮换、账户与资源授权、PostgreSQL 审计、Redis 会话租约、分区域 TURN。一个会话固定归属一个信令实例，跨实例消息带 sessionId/epoch，避免双重控制。
 

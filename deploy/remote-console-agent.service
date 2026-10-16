@@ -1,0 +1,20 @@
+[Unit]
+Description=Remote Console Linux desktop host
+After=network.target remote-console-api.service
+Wants=remote-console-api.service
+
+[Service]
+Type=simple
+WorkingDirectory=/root/project/github/kaibush/remote-console/apps/agent
+EnvironmentFile=/etc/remote-console/agent-environment
+ExecStart=/root/project/github/kaibush/remote-console/apps/agent/.venv/bin/python main.py
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

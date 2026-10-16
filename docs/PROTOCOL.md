@@ -1,5 +1,7 @@
 # 协议 v0（开发版）
 
+主机 auth 可带 `kind: "linux-x11"`，默认 `browser`。服务按 kind 返回 systemInput、textInput（ascii/test）和 maxFps 能力；系统主机当前使用共享 HOST_TOKEN，仅适合单管理员部署。
+
 运行时 schema 和类型以 `packages/protocol/src/index.ts` 为准。协议当前没有版本协商；原生 Agent 实现之前应固定 v1 版本及 capability 握手。
 
 ## HTTP

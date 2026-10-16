@@ -2,9 +2,17 @@
 
 基于 **satnaing/shadcn-admin** 二次开发的前后端分离远控基础项目。面向手机横屏，采用 WebRTC 视频 + DataChannel 输入，不走 VNC/RFB 或 Guacamole 图片更新链路。
 
-**当前交付是可运行的架构与链路验证版本，不是已完成的系统级远控产品。** 浏览器共享端能真实传输屏幕；触摸、鼠标与键盘事件能到达主机测试面板。浏览器不能注入操作系统输入。原生采集、硬件编码、键鼠注入仍需实现，平台方案见 [架构设计](docs/ARCHITECTURE.md)。尚未在真实手机/GPU环境完成性能验收。
+**现在可以访问服务器上的真实 Linux 桌面。** 已部署 X11 主机端，直接采集现有 XFCE `:10` 桌面，通过 WebRTC 提供画面与系统鼠标、键盘控制；无需先打开浏览器共享页。当前服务器无可用硬件编码，主机端使用软件编码、最高 30 FPS。英文/数字文本输入已支持，中文文本提交暂不支持。
 
 已部署入口：**https://rc.lvyrix.com**；电脑共享端：https://rc.lvyrix.com/host 。生产密钥保存在服务器 `/etc/remote-console/environment`，部署维护见 [部署说明](docs/DEPLOYMENT.md)。
+
+## 通过域名访问本机桌面
+
+1. 打开 https://rc.lvyrix.com ，用服务器 `/etc/remote-console/environment` 中的 `CONTROL_TOKEN` 登录。
+2. 在主机列表找到 **本机 Linux 桌面**，点击 **连接桌面**。
+3. 手机横屏后可点击、拖动、右键、打开键盘发送英文文本；工具栏可全屏或结束会话。
+
+主机端和 TURN 均由 systemd 常驻。这里访问的是此服务器现有 XFCE 桌面，原有 Guacamole 仍可使用。若 XFCE 会话退出或显示编号改变，需恢复桌面并更新主机端配置。TURN 中继已做强制中继测试，但未拿真实手机蜂窝网络完成性能验收。
 
 ## 启动
 
@@ -32,6 +40,7 @@ apps/web/                  克隆的 shadcn-admin，React / Vite / TanStack Rout
   src/features/remote/     主机列表、浏览器主机端、横屏控制台、WebRTC 客户端
 apps/server/               Fastify API、鉴权、WebSocket 信令、会话生命周期
 packages/protocol/         输入/信令运行时校验、共享类型、画质档位、坐标映射
+apps/agent/                Linux X11 实际桌面采集、软件编码、系统输入与自动重连
 scripts/setup.mjs          本地密钥配置初始化
 docs/                      架构、部署、协议与上游来源
 ```
@@ -61,4 +70,4 @@ npm start
 
 ## 当前边界
 
-单管理员原型：持有控制密钥可访问全部主机；尚无账户隔离、设备证书、持久化审计或分布式会话存储。服务重启会清空在线列表/会话；客户端需手动重连。默认不配置第三方 STUN。原生 Agent、系统输入、音频、多屏切换、文件传输、移动触控板/双指缩放、端到端延迟验收属于后续工作。请按 [架构中的阶段划分](docs/ARCHITECTURE.md) 扩展。
+单管理员原型：持有控制密钥可访问全部主机；尚无账户隔离、设备证书、持久化审计或分布式会话存储。服务重启会清空在线列表/会话；客户端需手动重连。默认不配置第三方 STUN。Linux X11 系统主机端已接入；Windows/macOS/Wayland、硬件编码、音频、多屏切换、文件传输、中文文本、移动触控板/双指缩放和真机延迟验收属于后续工作。请按 [架构中的阶段划分](docs/ARCHITECTURE.md) 扩展。

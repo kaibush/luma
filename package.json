@@ -14,7 +14,8 @@
     "test": "tsx --test apps/server/src/*.test.ts packages/protocol/src/*.test.ts",
     "start": "npm run start -w @remote/server",
     "setup": "node scripts/setup.mjs",
-    "test:e2e": "node scripts/smoke.mjs"
+    "test:e2e": "node scripts/smoke.mjs",
+    "test:native": "node scripts/native-smoke.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

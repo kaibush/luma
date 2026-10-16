@@ -321,13 +321,24 @@ export function Viewer({
           className='flex gap-2 border-t p-2'
           onSubmit={(e) => {
             e.preventDefault()
+            if (
+              host.capabilities.textInput === 'ascii' &&
+              /[^\x20-\x7e\n]/.test(text)
+            ) {
+              setError('此主机暂仅支持英文、数字和符号文本；中文输入尚未接入')
+              return
+            }
             if (text) send({ type: 'text', text })
             setText('')
           }}
         >
           <Input
             aria-label='发送文本'
-            placeholder='输入文字（浏览器主机只在测试面板显示）'
+            placeholder={
+              host.capabilities.systemInput
+                ? '输入英文或数字（暂不支持中文文本提交）'
+                : '输入文字（浏览器主机只在测试面板显示）'
+            }
             value={text}
             maxLength={2048}
             onChange={(e) => setText(e.target.value)}
@@ -388,7 +399,12 @@ export function Viewer({
         <span className='text-xs text-muted-foreground'>
           {stats.fps ?? '—'} FPS · {stats.mbps?.toFixed(1) ?? '—'} Mbps ·{' '}
           {stats.width ? `${stats.width}×${stats.height}` : '—'}{' '}
-          <span className='hidden md:inline'>· 浏览器共享 / 输入测试</span>
+          <span className='hidden md:inline'>
+            ·{' '}
+            {host.capabilities.systemInput
+              ? 'Linux 桌面控制'
+              : '浏览器共享 / 输入测试'}
+          </span>
         </span>
       </footer>
     </div>,

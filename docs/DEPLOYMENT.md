@@ -50,7 +50,7 @@ no-loopback-peers
 ## 运行边界
 
 - 控制密钥是单管理员原型凭据，持有者可以创建/结束所有会话。生产多用户先实现资源授权，不要把前端模板的演示登录当成认证。
-- 主机注册当前只接受浏览器测试端。接入原生主机时需设备级令牌/证书、能力校验与用户授权。
+- 主机注册接受浏览器测试端和 Linux X11 系统主机端，均使用主机密钥。多设备生产扩展仍需设备级令牌/证书与资源授权。
 - API 使用进程内状态，只运行单实例；直接多副本负载均衡会导致找不到会话。扩容方式见架构文档。
 - WSS 首帧传认证令牌，不放查询串。WebSocket Origin 只接受配置的浏览器来源；无 Origin 连接仍必须令牌认证，给将来的原生端留接入路径。
 - 服务重启、关闭页面/共享、网络断开将清理会话。当前手动重连；尚未实现断网无感恢复。
@@ -78,3 +78,28 @@ curl -fsS https://rc.lvyrix.com/health
 前端不会显示密钥。由管理员在服务器本地读取 `/etc/remote-console/environment` 中对应密钥，分别填入工作空间和 `/host` 页。公网 HTTPS 解决页面和信令入口；不同网络之间的桌面视频仍可能需要 TURN，域名上线不代表 NAT 穿透已在真机验证。
 
 验证公网 WebRTC：服务已发布后运行 `SMOKE_BASE_URL=https://rc.lvyrix.com npm run test:e2e`。该脚本默认使用根目录 `.env` 的密钥，适用于首次部署沿用同一组密钥的配置；轮换生产密钥后应同步测试凭据，避免在命令行参数中暴露令牌。
+
+
+## Linux 本机桌面主机端
+
+已部署 `remote-console-agent.service`，通过 `DISPLAY=:10`、`XAUTHORITY=/root/.Xauthority` 接入已有 XFCE 会话；不启动另一个桌面，不改动 Guacamole/RDP 配置。X11 socket 不可隔离到 PrivateTmp。`agent-environment` 仅含主机令牌、显示会话和本地信令 URL，不包含控制令牌。
+
+依赖：Python 3.12 + venv、当前 X11 会话、XTest、coturn。安装/恢复脚本：`bash deploy/install-agent.sh`；依赖锁在 `apps/agent/requirements.lock`。该脚本按本服务器固定 IP/目录部署，迁移时修改 TURN 公网地址、relay-ip、Node/项目路径及桌面认证路径。`deploy/publish.sh` 发布更新后的 API/前端；修改 Python 主机端后单独重启 agent。
+
+配置文件（均不提交 Git）：
+
+- `/etc/remote-console/agent-environment`：HOST_TOKEN、DISPLAY、XAUTHORITY、SIGNAL_URL、HOST_NAME。
+- `/etc/remote-console/turnserver.conf`：TURN HMAC 密钥、relay 地址与配额；systemd LoadCredential 向专用 turnserver 用户提供此文件。
+- `/etc/remote-console/environment`：API 已配置 `TURN_URL=turn:207.58.173.239:3478`、STUN 和同一 TURN_SECRET。
+
+TURN 使用真实服务器 IP（不走 Cloudflare 代理），监听 3478 UDP/TCP，relay 范围 49200–49300 UDP。禁止向私网和回环网络中继。媒体内容仍由 WebRTC 加密；当前默认使用 UDP；若网络仅允许 TCP，可将 API 的 TURN_URL 改为 `turn:207.58.173.239:3478?transport=tcp` 并重启 API。当前未自动切换 TCP，也未提供 TURN/TLS 443。
+
+```sh
+systemctl status remote-console-agent remote-console-turn --no-pager
+journalctl -u remote-console-agent -n 30 --no-pager
+npm run test:native
+```
+
+`test:native` 创建一个短暂的 X11 测试窗口，通过域名用 Chromium 强制 TURN 连接实际桌面，校验视频像素和系统输入，再关闭窗口并恢复之前焦点。会产生一次真实控制会话，请在主机空闲时运行。当前桌面宽高比例可能不是 16:9，流畅档按宽度缩放，测试时实际视频为 1280×608。
+
+主机端断线会自动退避重连；系统桌面注销后应重新登录桌面，必要时修改 DISPLAY。无 GPU 硬编的 4 核服务器不保证持续 30 FPS；与 Guacamole 同时使用会共享同一个桌面焦点和输入状态。
