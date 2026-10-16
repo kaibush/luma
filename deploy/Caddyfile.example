@@ -1,0 +1,19 @@
+remote.example.com {
+    encode zstd gzip
+    handle /api/* {
+        reverse_proxy 127.0.0.1:8787
+    }
+    handle /ws {
+        reverse_proxy 127.0.0.1:8787
+    }
+    handle {
+        root * /absolute/path/to/remote-console/apps/web/dist
+        try_files {path} /index.html
+        file_server
+    }
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy no-referrer
+        X-Frame-Options DENY
+    }
+}

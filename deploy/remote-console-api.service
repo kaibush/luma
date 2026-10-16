@@ -1,0 +1,21 @@
+[Unit]
+Description=Remote Console production API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/project/github/kaibush/remote-console
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/remote-console/environment
+ExecStart=/root/.nvm/versions/node/v24.18.0/bin/node apps/server/dist/index.js
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

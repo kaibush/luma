@@ -1,0 +1,28 @@
+{
+  "name": "remote-console",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n api,web 'npm run dev -w @remote/server' 'npm run dev -w @remote/web'",
+    "build": "npm run build -w @remote/server && npm run build -w @remote/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "tsx --test apps/server/src/*.test.ts packages/protocol/src/*.test.ts",
+    "start": "npm run start -w @remote/server",
+    "setup": "node scripts/setup.mjs",
+    "test:e2e": "node scripts/smoke.mjs"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "tsx": "^4.19.3",
+    "typescript": "~5.9.3",
+    "@types/node": "^24.0.0"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

@@ -1,0 +1,334 @@
+import { useEffect, useState } from 'react'
+import {
+  qualityProfiles,
+  type Host,
+  type IceServer,
+  type Quality,
+  type Session,
+} from '@remote/protocol'
+import {
+  ArrowUpRight,
+  Monitor,
+  Radio,
+  RefreshCw,
+  ShieldCheck,
+  Zap,
+} from 'lucide-react'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import {
+  Empty,
+  EmptyHeader,
+  EmptyTitle,
+  EmptyDescription,
+  EmptyMedia,
+} from '@/components/ui/empty'
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Header } from '@/components/layout/header'
+import { Main } from '@/components/layout/main'
+import { ThemeSwitch } from '@/components/theme-switch'
+import { api } from './api'
+import { Viewer } from './viewer'
+
+export function RemoteDashboard() {
+  const [token, setToken] = useState(''),
+    [draft, setDraft] = useState(''),
+    [hosts, setHosts] = useState<Host[]>([])
+  const [loading, setLoading] = useState(false),
+    [error, setError] = useState(''),
+    [quality, setQuality] = useState<Quality>('responsive')
+  const [active, setActive] = useState<{
+    host: Host
+    session: Session
+    iceServers: IceServer[]
+  } | null>(null)
+  useEffect(() => {
+    if (!token) return
+    let disposed = false
+    const refresh = async () => {
+      try {
+        const result = await api<{ hosts: Host[] }>('/hosts', token)
+        if (!disposed) {
+          setHosts(result.hosts)
+          setError('')
+        }
+      } catch (e) {
+        if (!disposed) setError((e as Error).message)
+      }
+    }
+    const timer = setInterval(() => void refresh(), 5000)
+    return () => {
+      disposed = true
+      clearInterval(timer)
+    }
+  }, [token])
+  const refresh = async () => {
+    setLoading(true)
+    try {
+      const data = await api<{ hosts: Host[] }>('/hosts', token || draft)
+      setHosts(data.hosts)
+      setToken(token || draft)
+      setDraft('')
+      setError('')
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setLoading(false)
+    }
+  }
+  const connect = async (host: Host) => {
+    setLoading(true)
+    try {
+      const data = await api<{ session: Session; iceServers: IceServer[] }>(
+        '/sessions',
+        token,
+        { method: 'POST', body: JSON.stringify({ hostId: host.id, quality }) }
+      )
+      setActive({ host, ...data })
+      setError('')
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setLoading(false)
+    }
+  }
+  return (
+    <>
+      <Header>
+        <span className='text-sm font-medium'>Remote Console</span>
+        <div className='ms-auto flex items-center gap-2'>
+          <Badge variant='outline'>开发预览</Badge>
+          {token && (
+            <Button
+              variant='ghost'
+              size='sm'
+              onClick={() => {
+                setToken('')
+                setHosts([])
+                setError('')
+              }}
+            >
+              退出工作空间
+            </Button>
+          )}
+          <ThemeSwitch />
+        </div>
+      </Header>
+      <Main className='flex flex-col gap-6'>
+        <div className='flex flex-wrap items-end justify-between gap-4'>
+          <div className='flex flex-col gap-2'>
+            <p className='text-sm text-muted-foreground'>工作空间 / 远程桌面</p>
+            <h1 className='text-3xl font-semibold tracking-tight'>
+              你的桌面，随时连接。
+            </h1>
+            <p className='text-muted-foreground'>
+              从手机到电脑，在浏览器中访问你的工作空间。
+            </p>
+          </div>
+          <Button asChild variant='outline'>
+            <a href='/host' target='_blank' rel='noreferrer'>
+              <Monitor data-icon='inline-start' />
+              接入此电脑
+              <ArrowUpRight data-icon='inline-end' />
+            </a>
+          </Button>
+        </div>
+        <div className='grid gap-4 sm:grid-cols-3'>
+          {[
+            {
+              icon: Monitor,
+              title: '在线主机',
+              value: token ? `${hosts.length} 台` : '等待验证',
+              description: '由已连接的共享端实时提供',
+            },
+            {
+              icon: Zap,
+              title: '视频链路',
+              value: 'WebRTC',
+              description: '优先直连 · 支持 TURN 中继',
+            },
+            {
+              icon: ShieldCheck,
+              title: '连接保护',
+              value: '加密传输',
+              description: '视频与输入由 DTLS / SRTP 保护',
+            },
+          ].map((item) => (
+            <Card key={item.title}>
+              <CardHeader>
+                <CardDescription className='flex items-center gap-2'>
+                  <item.icon className='size-4' />
+                  {item.title}
+                </CardDescription>
+                <CardTitle>{item.value}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className='text-sm text-muted-foreground'>
+                  {item.description}
+                </p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        {!token && (
+          <Card>
+            <CardHeader>
+              <CardTitle>连接到你的控制服务</CardTitle>
+              <CardDescription>
+                输入部署时配置的控制端密钥。密钥仅保存在当前页面内存中。
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form
+                className='flex flex-col items-end gap-3 sm:flex-row'
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  void refresh()
+                }}
+              >
+                <FieldGroup>
+                  <Field>
+                    <FieldLabel htmlFor='control-token'>控制端密钥</FieldLabel>
+                    <Input
+                      id='control-token'
+                      type='password'
+                      autoComplete='off'
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      placeholder='CONTROL_TOKEN'
+                      required
+                    />
+                  </Field>
+                </FieldGroup>
+                <Button type='submit' disabled={loading || !draft}>
+                  {loading ? '验证中…' : '进入工作空间'}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        )}
+        {error && (
+          <Alert variant='destructive' role='alert'>
+            <AlertTitle>连接遇到问题</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+        <section className='flex flex-col gap-4' aria-label='主机列表'>
+          <div className='flex flex-wrap items-center justify-between gap-3'>
+            <div>
+              <h2 className='text-xl font-semibold'>我的主机</h2>
+              <p className='text-sm text-muted-foreground'>
+                选择在线主机，开始远程会话。
+              </p>
+            </div>
+            {token && (
+              <Button
+                variant='outline'
+                size='sm'
+                disabled={loading}
+                onClick={() => void refresh()}
+              >
+                <RefreshCw data-icon='inline-start' />
+                刷新
+              </Button>
+            )}
+          </div>
+          <Field className='max-w-xs'>
+            <FieldLabel htmlFor='quality'>连接画质</FieldLabel>
+            <select
+              id='quality'
+              className='h-11 rounded-md border bg-background px-3 text-sm'
+              value={quality}
+              onChange={(e) => setQuality(e.target.value as Quality)}
+            >
+              {Object.entries(qualityProfiles).map(([id, p]) => (
+                <option key={id} value={id}>
+                  {p.label} · {p.height}p / {p.fps} FPS 上限
+                </option>
+              ))}
+            </select>
+          </Field>
+          {loading && !hosts.length ? (
+            <Skeleton className='h-48 w-full' />
+          ) : !hosts.length ? (
+            <Empty className='border border-dashed'>
+              <EmptyHeader>
+                <EmptyMedia variant='icon'>
+                  <Monitor />
+                </EmptyMedia>
+                <EmptyTitle>
+                  {token ? '还没有在线主机' : '验证后查看在线主机'}
+                </EmptyTitle>
+                <EmptyDescription>
+                  在被控电脑打开「接入此电脑」，授权共享一个屏幕，再回到这里连接。
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : (
+            <div className='grid gap-4 md:grid-cols-2 xl:grid-cols-3'>
+              {hosts.map((host) => (
+                <Card key={host.id}>
+                  <CardHeader>
+                    <div className='mb-3 flex items-center justify-between'>
+                      <Monitor className='size-8 text-muted-foreground' />
+                      <Badge variant={host.busy ? 'secondary' : 'outline'}>
+                        {host.busy ? '使用中' : '在线'}
+                      </Badge>
+                    </div>
+                    <CardTitle>{host.name}</CardTitle>
+                    <CardDescription>
+                      浏览器共享端 · 视频与输入测试
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <p className='text-sm text-muted-foreground'>
+                      支持实时画面；系统级鼠标键盘控制需接入原生 Agent。
+                    </p>
+                  </CardContent>
+                  <CardFooter>
+                    <Button
+                      className='w-full'
+                      disabled={host.busy || loading}
+                      onClick={() => void connect(host)}
+                    >
+                      <Radio data-icon='inline-start' />
+                      {host.busy ? '已有活动会话' : '连接桌面'}
+                    </Button>
+                  </CardFooter>
+                </Card>
+              ))}
+            </div>
+          )}
+        </section>
+        <Alert>
+          <ShieldCheck />
+          <AlertTitle>当前版本：远控架构与链路验证</AlertTitle>
+          <AlertDescription>
+            此版本用于验证视频流、移动端操作和输入协议。浏览器共享端无法控制操作系统；真实桌面控制需要安装后续的原生主机端。
+          </AlertDescription>
+        </Alert>
+      </Main>
+      {active && (
+        <Viewer
+          {...active}
+          token={token}
+          onExit={() => {
+            setActive(null)
+            void refresh()
+          }}
+        />
+      )}
+    </>
+  )
+}
