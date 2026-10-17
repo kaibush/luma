@@ -1,7 +1,7 @@
 /* Blue workspace theme, with shared semantic colors for every surface. */
 :root {
   --radius: 1rem;
-  --background: #f5f7fb;
+  --background: #ffffff;
   --foreground: #202c40;
   --card: #ffffff;
   --card-foreground: var(--foreground);
