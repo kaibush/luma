@@ -78,7 +78,9 @@ test('touchpad swipes move without holding left, taps click cursor, direct mode 
     [390, 844],
   ]) {
     await page.viewport(width, height)
-    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))
+    await new Promise((r) =>
+      requestAnimationFrame(() => requestAnimationFrame(r))
+    )
     const viewer = document.querySelector('.remote-viewer')!
     expect(viewer.scrollWidth).toBeLessThanOrEqual(width)
     expect(
@@ -176,6 +178,12 @@ test('mobile keyboard sends chords in order, restores tools after fullscreen fal
   expect(document.querySelector('.remote-viewer')!.textContent).not.toContain(
     '不支持页面全屏'
   )
+  expect(document.querySelector('[role="status"]')?.textContent).toContain(
+    '已进入沉浸模式'
+  )
+  await expect
+    .poll(() => document.querySelector('[role="status"]'), { timeout: 5000 })
+    .toBeNull()
   await screen.getByRole('button', { name: '显示工具' }).click()
   await screen.getByRole('button', { name: '键盘', exact: true }).click()
   sendInput.mockClear()
@@ -220,7 +228,9 @@ test('mobile keyboard sends chords in order, restores tools after fullscreen fal
     [390, 380],
   ]) {
     await page.viewport(width, height)
-    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))
+    await new Promise((r) =>
+      requestAnimationFrame(() => requestAnimationFrame(r))
+    )
     const panel = document.querySelector('.remote-panel')!
     panel.scrollTop = 0
     expect(
@@ -256,4 +266,4 @@ test('mobile keyboard sends chords in order, restores tools after fullscreen fal
   expect(sendInput).toHaveBeenCalledWith({ type: 'release-all' })
   await screen.unmount()
   enabled.mockRestore()
-})
+}, 30000)

@@ -36,7 +36,9 @@ export function LoginPage() {
   return (
     <main className='mx-auto flex min-h-svh max-w-md flex-col justify-center gap-6 p-4'>
       <div className='flex items-center justify-center gap-3'>
-        <Monitor className='size-7' />
+        <span className='flex size-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground'>
+          <Monitor className='size-6' />
+        </span>
         <span className='text-xl font-semibold'>{state.workspaceName}</span>
       </div>
       <form

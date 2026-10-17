@@ -12,6 +12,8 @@ import {
   Radio,
   RefreshCw,
   ShieldCheck,
+  CircleCheck,
+  Activity,
 } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -121,9 +123,7 @@ export function RemoteDashboard() {
         <div className='flex flex-wrap items-end justify-between gap-4'>
           <div className='flex flex-col gap-2'>
             <p className='text-sm text-muted-foreground'>工作空间 / 远程桌面</p>
-            <h1 className='text-3xl font-semibold tracking-tight'>
-              你的桌面，随时连接。
-            </h1>
+            <h1 className='text-3xl font-semibold tracking-tight'>远程桌面</h1>
             <p className='text-muted-foreground'>
               选择一台在线电脑，点击「连接桌面」即可开始。
             </p>
@@ -136,13 +136,39 @@ export function RemoteDashboard() {
             </a>
           </Button>
         </div>
+        <div className='grid grid-cols-3 gap-3'>
+          {[
+            { label: '在线主机', value: hosts.length, icon: Monitor },
+            {
+              label: '可连接',
+              value: hosts.filter((h) => !h.busy).length,
+              icon: CircleCheck,
+            },
+            {
+              label: '使用中',
+              value: hosts.filter((h) => h.busy).length,
+              icon: Activity,
+            },
+          ].map(({ label, value, icon: Icon }) => (
+            <Card key={label} className='gap-2 py-4'>
+              <CardHeader className='px-4'>
+                <Icon className='mb-2 size-5 text-primary' />
+                <CardDescription>{label}</CardDescription>
+                <CardTitle className='text-2xl'>{value}</CardTitle>
+              </CardHeader>
+            </Card>
+          ))}
+        </div>
         {error && (
           <Alert variant='destructive' role='alert'>
             <AlertTitle>连接遇到问题</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
-        <section className='flex flex-col gap-4' aria-label='主机列表'>
+        <section
+          className='flex flex-col gap-5 rounded-2xl border bg-card p-4 sm:p-6'
+          aria-label='主机列表'
+        >
           <div className='flex flex-wrap items-center justify-between gap-3'>
             <div>
               <h2 className='text-xl font-semibold'>我的主机</h2>
@@ -197,11 +223,13 @@ export function RemoteDashboard() {
           ) : (
             <div className='grid gap-4 md:grid-cols-2 xl:grid-cols-3'>
               {hosts.map((host) => (
-                <Card key={host.id}>
+                <Card key={host.id} className='host-card'>
                   <CardHeader>
                     <div className='mb-3 flex items-center justify-between'>
-                      <Monitor className='size-8 text-muted-foreground' />
-                      <Badge variant={host.busy ? 'secondary' : 'outline'}>
+                      <span className='flex size-12 items-center justify-center rounded-xl bg-accent text-primary'>
+                        <Monitor className='size-6' />
+                      </span>
+                      <Badge variant={host.busy ? 'warning' : 'success'}>
                         {host.busy ? '使用中' : '在线'}
                       </Badge>
                     </div>

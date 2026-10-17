@@ -51,6 +51,11 @@ export function Viewer({
   const [nativeFullscreen, setNativeFullscreen] = useState(false)
   const [supportsFullscreen, setSupportsFullscreen] = useState(false)
   const [displayHint, setDisplayHint] = useState('')
+  useEffect(() => {
+    if (!displayHint) return
+    const timer = window.setTimeout(() => setDisplayHint(''), 3000)
+    return () => window.clearTimeout(timer)
+  }, [displayHint])
   const [touchpad, setTouchpad] = useState(false)
   const gesture = useRef<TouchGesture | null>(null)
   const activePointer = useRef<number | null>(null),
@@ -70,7 +75,6 @@ export function Viewer({
       element.style.height = `${viewport.height}px`
       element.style.top = `${viewport.offsetTop}px`
       element.style.left = `${viewport.offsetLeft}px`
-
     }
     resize()
     window.addEventListener('resize', resize)
@@ -265,9 +269,7 @@ export function Viewer({
     const result = await enterDisplayMode(container.current!)
     setImmersive(true)
     setDisplayHint(
-      result === 'immersive'
-        ? '已隐藏工具栏。浏览器地址栏由系统控制；需要操作时点「显示工具」。'
-        : ''
+      result === 'immersive' ? '已进入沉浸模式，点「显示工具」可恢复。' : ''
     )
   }
   const openPanel = (next: 'keyboard' | 'more') => {
@@ -284,7 +286,7 @@ export function Viewer({
     <div
       ref={container}
       className='remote-viewer bg-background text-foreground'
-      data-panel={immersive ? undefined : panel ?? undefined}
+      data-panel={immersive ? undefined : (panel ?? undefined)}
     >
       {!immersive && (
         <header className='flex min-h-12 shrink-0 items-center justify-between gap-2 border-b px-2'>
@@ -341,10 +343,11 @@ export function Viewer({
         onContextMenu={(e) => e.preventDefault()}
       >
         {immersive && (
-          <div className='absolute end-2 top-2 z-10 flex max-w-[85%] flex-col items-end gap-2'>
+          <div className='pointer-events-none absolute end-2 top-2 z-10 flex max-w-[85%] flex-col items-end gap-2'>
             <Button
               variant='secondary'
               size='sm'
+              className='pointer-events-auto'
               onClick={() => {
                 setImmersive(false)
                 setDisplayHint('')
@@ -354,7 +357,7 @@ export function Viewer({
               显示工具
             </Button>
             {displayHint && (
-              <Alert className='max-w-sm'>
+              <Alert role='status' className='pointer-events-none max-w-xs'>
                 <AlertDescription>{displayHint}</AlertDescription>
               </Alert>
             )}

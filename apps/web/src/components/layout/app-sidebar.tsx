@@ -1,3 +1,4 @@
+import { Monitor } from 'lucide-react'
 import { useLayout } from '@/context/layout-provider'
 import {
   Sidebar,
@@ -6,21 +7,31 @@ import {
   SidebarHeader,
   SidebarRail,
 } from '@/components/ui/sidebar'
+import { useRemoteAuth } from '@/features/access/auth'
 // import { AppTitle } from './app-title'
 import { sidebarData } from './data/sidebar-data'
 import { NavGroup } from './nav-group'
-import { TeamSwitcher } from './team-switcher'
 
 export function AppSidebar() {
   const { collapsible, variant } = useLayout()
+  const { state } = useRemoteAuth()
   return (
     <Sidebar collapsible={collapsible} variant={variant}>
       <SidebarHeader>
-        <TeamSwitcher teams={sidebarData.teams} />
-
-        {/* Replace <TeamSwitch /> with the following <AppTitle />
-         /* if you want to use the normal app title instead of TeamSwitch dropdown */}
-        {/* <AppTitle /> */}
+        <a
+          href='/'
+          className='flex items-center gap-3 overflow-hidden rounded-xl p-2'
+        >
+          <span className='flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground'>
+            <Monitor className='size-5' />
+          </span>
+          <span className='min-w-0 group-data-[collapsible=icon]:hidden'>
+            <span className='block truncate text-sm font-semibold'>
+              {state.workspaceName}
+            </span>
+            <span className='text-xs text-muted-foreground'>远程工作空间</span>
+          </span>
+        </a>
       </SidebarHeader>
       <SidebarContent>
         {sidebarData.navGroups.map((props) => (
