@@ -252,3 +252,101 @@
     transition: none;
   }
 }
+
+/* Dashboard accents preserve the white workspace and adapt to dark mode. */
+:root {
+  --workspace-violet: #7650bb;
+  --workspace-violet-soft: #f2edfc;
+}
+.dark {
+  --workspace-violet: #c3a5fa;
+  --workspace-violet-soft: #302540;
+}
+.dashboard-welcome {
+  background: linear-gradient(
+    115deg,
+    var(--accent),
+    var(--card) 65%,
+    var(--workspace-violet-soft)
+  );
+  border: 1px solid var(--border);
+}
+.dashboard-stat {
+  border-top: 3px solid var(--primary);
+}
+.dashboard-stat .stat-icon {
+  color: var(--primary);
+  background: var(--accent);
+}
+.dashboard-stat[data-tone='green'] {
+  border-top-color: var(--success);
+}
+.dashboard-stat[data-tone='green'] .stat-icon {
+  color: var(--success);
+  background: var(--success-soft);
+}
+.dashboard-stat[data-tone='purple'] {
+  border-top-color: var(--workspace-violet);
+}
+.dashboard-stat[data-tone='purple'] .stat-icon {
+  color: var(--workspace-violet);
+  background: var(--workspace-violet-soft);
+}
+.connection-presets {
+  background: color-mix(in srgb, var(--accent) 25%, var(--card));
+}
+.preset-grid {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.preset-grid .preset-option {
+  height: auto;
+  min-height: 76px;
+  justify-content: flex-start;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  text-align: left;
+  white-space: normal;
+}
+.preset-grid .preset-option[data-state='on'] {
+  border-color: var(--primary);
+  background: var(--accent);
+  color: var(--accent-foreground);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+.preset-detail {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted-foreground);
+}
+.dashboard-host {
+  min-width: 0;
+  transition:
+    border-color 160ms,
+    box-shadow 160ms;
+}
+.dashboard-host:hover {
+  border-color: var(--primary);
+  box-shadow: 0 6px 22px color-mix(in srgb, var(--primary) 9%, transparent);
+}
+.dashboard-host [aria-pressed='true'] .favorite-star {
+  fill: var(--warning);
+  color: var(--warning);
+}
+@media (max-width: 520px) {
+  .preset-grid {
+    grid-template-columns: 1fr;
+  }
+  .preset-grid .preset-option {
+    min-height: 60px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-host {
+    transition: none;
+  }
+}

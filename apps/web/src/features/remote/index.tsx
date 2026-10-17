@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   qualityProfiles,
   type Host,
@@ -14,6 +14,10 @@ import {
   ShieldCheck,
   CircleCheck,
   Activity,
+  Star,
+  Zap,
+  Globe,
+  Sparkles,
 } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -34,7 +38,9 @@ import {
   EmptyMedia,
 } from '@/components/ui/empty'
 import { Field, FieldLabel, FieldDescription } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
@@ -42,9 +48,45 @@ import { useRemoteAuth, request } from '@/features/access/auth'
 import { api } from './api'
 import { Viewer } from './viewer'
 
+// Names survive host reconnects; same-name hosts of the same kind share a favorite.
+const favoriteKey = (host: Host) => JSON.stringify([host.kind, host.name])
+function readFavorites(key: string): string[] {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(key) || '[]')
+    return Array.isArray(value)
+      ? value.filter((v): v is string => typeof v === 'string')
+      : []
+  } catch {
+    return []
+  }
+}
+
 export function RemoteDashboard() {
   const { state, logout } = useRemoteAuth()
   const token = ''
+  const favoritesStorageKey = `remote-favorites:${state.user?.username || 'controller'}`
+  const [favorites, setFavorites] = useState(() =>
+    readFavorites(favoritesStorageKey)
+  )
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState('all')
+  const qualityChosen = useRef(false)
+  const chooseQuality = (value: Quality) => {
+    qualityChosen.current = true
+    setQuality(value)
+  }
+  const toggleFavorite = (host: Host) => {
+    const key = favoriteKey(host)
+    const next = favorites.includes(key)
+      ? favorites.filter((item) => item !== key)
+      : [...favorites, key]
+    setFavorites(next)
+    try {
+      localStorage.setItem(favoritesStorageKey, JSON.stringify(next))
+    } catch {
+      /* Session-only when storage is unavailable. */
+    }
+  }
   const [hosts, setHosts] = useState<Host[]>([])
   const [loading, setLoading] = useState(false),
     [error, setError] = useState(''),
@@ -70,7 +112,7 @@ export function RemoteDashboard() {
     void refresh()
     void request<{ defaultQuality: Quality }>('/preferences')
       .then((p) => {
-        if (!disposed) setQuality(p.defaultQuality)
+        if (!disposed && !qualityChosen.current) setQuality(p.defaultQuality)
       })
       .catch(() => {})
     const timer = setInterval(() => void refresh(), 5000)
@@ -107,6 +149,22 @@ export function RemoteDashboard() {
       setLoading(false)
     }
   }
+  const visibleHosts = hosts
+    .filter((host) => {
+      const matches = `${host.name} ${host.kind}`
+        .toLowerCase()
+        .includes(query.trim().toLowerCase())
+      return (
+        matches &&
+        (filter !== 'favorites' || favorites.includes(favoriteKey(host))) &&
+        (filter !== 'available' || !host.busy)
+      )
+    })
+    .sort(
+      (a, b) =>
+        Number(favorites.includes(favoriteKey(b))) -
+        Number(favorites.includes(favoriteKey(a)))
+    )
   return (
     <>
       <Header>
@@ -119,13 +177,15 @@ export function RemoteDashboard() {
           <ThemeSwitch />
         </div>
       </Header>
-      <Main className='flex flex-col gap-6'>
-        <div className='flex flex-wrap items-end justify-between gap-4'>
+      <Main id='content' tabIndex={-1} className='flex flex-col gap-6'>
+        <div className='dashboard-welcome flex flex-wrap items-center justify-between gap-5 rounded-2xl p-5 sm:p-7'>
           <div className='flex flex-col gap-2'>
-            <p className='text-sm text-muted-foreground'>工作空间 / 远程桌面</p>
+            <p className='text-sm text-muted-foreground'>
+              YOUR WORKSPACE · 你的工作空间
+            </p>
             <h1 className='text-3xl font-semibold tracking-tight'>远程桌面</h1>
             <p className='text-muted-foreground'>
-              选择一台在线电脑，点击「连接桌面」即可开始。
+              桌面随行，工作随心。连接你的电脑，从这里继续。
             </p>
           </div>
           <Button asChild variant='outline'>
@@ -138,21 +198,34 @@ export function RemoteDashboard() {
         </div>
         <div className='grid grid-cols-3 gap-3'>
           {[
-            { label: '在线主机', value: hosts.length, icon: Monitor },
+            {
+              label: '在线主机',
+              value: hosts.length,
+              icon: Monitor,
+              tone: 'blue',
+            },
             {
               label: '可连接',
               value: hosts.filter((h) => !h.busy).length,
               icon: CircleCheck,
+              tone: 'green',
             },
             {
               label: '使用中',
               value: hosts.filter((h) => h.busy).length,
               icon: Activity,
+              tone: 'purple',
             },
-          ].map(({ label, value, icon: Icon }) => (
-            <Card key={label} className='gap-2 py-4'>
+          ].map(({ label, value, icon: Icon, tone }) => (
+            <Card
+              key={label}
+              className='dashboard-stat gap-2 py-4'
+              data-tone={tone}
+            >
               <CardHeader className='px-4'>
-                <Icon className='mb-2 size-5 text-primary' />
+                <span className='stat-icon mb-2 flex size-10 items-center justify-center rounded-xl'>
+                  <Icon className='size-5' />
+                </span>
                 <CardDescription>{label}</CardDescription>
                 <CardTitle className='text-2xl'>{value}</CardTitle>
               </CardHeader>
@@ -188,24 +261,102 @@ export function RemoteDashboard() {
               </Button>
             )}
           </div>
-          <Field className='max-w-xs'>
-            <FieldLabel htmlFor='quality'>连接画质</FieldLabel>
-            <select
-              id='quality'
-              className='h-11 rounded-md border bg-background px-3 text-sm'
+          <div className='connection-presets flex flex-col gap-4 rounded-xl border p-4'>
+            <div className='flex items-center gap-2 text-sm font-semibold'>
+              <Zap className='size-4 text-primary' />
+              连接预设
+            </div>
+            <ToggleGroup
+              type='single'
               value={quality}
-              onChange={(e) => setQuality(e.target.value as Quality)}
+              onValueChange={(v) => {
+                if (v) chooseQuality(v as Quality)
+              }}
+              className='preset-grid'
+              spacing={2}
+              aria-label='连接预设'
             >
-              {Object.entries(qualityProfiles).map(([id, p]) => (
-                <option key={id} value={id}>
-                  {p.label} · {p.height}p / {p.fps} FPS 上限
-                </option>
+              {[
+                {
+                  id: 'smooth',
+                  title: '省流畅连',
+                  detail: '540p · 移动网络',
+                  icon: Globe,
+                },
+                {
+                  id: 'responsive',
+                  title: '日常办公',
+                  detail: '720p · 流畅响应',
+                  icon: Zap,
+                },
+                {
+                  id: 'sharp',
+                  title: '高清桌面',
+                  detail: '1080p · 网络良好',
+                  icon: Sparkles,
+                },
+              ].map(({ id, title, detail, icon: Icon }) => (
+                <ToggleGroupItem key={id} value={id} className='preset-option'>
+                  <Icon className='size-5' />
+                  <span className='flex min-w-0 flex-col gap-1'>
+                    <span>{title}</span>
+                    <span className='preset-detail'>{detail}</span>
+                  </span>
+                </ToggleGroupItem>
               ))}
-            </select>
-            <FieldDescription>
-              流畅优先选 540p，仍卡顿选 360p。帧率为上限，切换后重新连接生效。
-            </FieldDescription>
-          </Field>
+            </ToggleGroup>
+            <Field>
+              <FieldLabel htmlFor='quality'>连接画质 · 下次连接生效</FieldLabel>
+              <select
+                id='quality'
+                className='h-11 w-full max-w-sm rounded-md border bg-background px-3 text-sm'
+                value={quality}
+                onChange={(e) => chooseQuality(e.target.value as Quality)}
+              >
+                {Object.entries(qualityProfiles).map(([id, p]) => (
+                  <option key={id} value={id}>
+                    {p.label} · {p.height}p / {p.fps} FPS 上限
+                  </option>
+                ))}
+              </select>
+              <FieldDescription>
+                仍卡顿时可选极速流畅
+                360p；实际清晰度和帧率取决于网络与主机性能。
+              </FieldDescription>
+            </Field>
+          </div>
+          <div className='flex flex-wrap items-end gap-3'>
+            <Field className='min-w-0 flex-1 basis-56'>
+              <FieldLabel htmlFor='host-search'>搜索主机</FieldLabel>
+              <Input
+                id='host-search'
+                type='search'
+                placeholder='输入主机名称或类型…'
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </Field>
+            <ToggleGroup
+              type='single'
+              variant='outline'
+              value={filter}
+              onValueChange={(v) => {
+                if (v) setFilter(v)
+              }}
+              aria-label='筛选主机'
+            >
+              <ToggleGroupItem value='all'>全部</ToggleGroupItem>
+              <ToggleGroupItem value='available'>可连接</ToggleGroupItem>
+              <ToggleGroupItem value='favorites'>
+                <Star />
+                收藏
+              </ToggleGroupItem>
+            </ToggleGroup>
+          </div>
+          <p className='text-xs text-muted-foreground' role='status'>
+            显示 {visibleHosts.length} 台 · 每 5 秒自动刷新 ·
+            收藏保存在此浏览器（同名同类型主机共享）
+          </p>
           {loading && !hosts.length ? (
             <Skeleton className='h-48 w-full' />
           ) : !hosts.length ? (
@@ -220,20 +371,56 @@ export function RemoteDashboard() {
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>
+          ) : !visibleHosts.length ? (
+            <Empty className='border border-dashed'>
+              <EmptyHeader>
+                <EmptyMedia variant='icon'>
+                  <Monitor />
+                </EmptyMedia>
+                <EmptyTitle>没有符合条件的主机</EmptyTitle>
+                <EmptyDescription>
+                  试试其他关键词，或收藏常用主机后在这里快速找到。
+                </EmptyDescription>
+              </EmptyHeader>
+              <Button
+                variant='outline'
+                onClick={() => {
+                  setQuery('')
+                  setFilter('all')
+                }}
+              >
+                清除筛选
+              </Button>
+            </Empty>
           ) : (
             <div className='grid gap-4 md:grid-cols-2 xl:grid-cols-3'>
-              {hosts.map((host) => (
-                <Card key={host.id} className='host-card'>
+              {visibleHosts.map((host) => (
+                <Card
+                  key={host.id}
+                  className='host-card dashboard-host'
+                  data-favorite={favorites.includes(favoriteKey(host))}
+                >
                   <CardHeader>
                     <div className='mb-3 flex items-center justify-between'>
                       <span className='flex size-12 items-center justify-center rounded-xl bg-accent text-primary'>
                         <Monitor className='size-6' />
                       </span>
-                      <Badge variant={host.busy ? 'warning' : 'success'}>
-                        {host.busy ? '使用中' : '在线'}
-                      </Badge>
+                      <div className='flex items-center gap-2'>
+                        <Button
+                          variant='ghost'
+                          size='icon'
+                          aria-label={`${favorites.includes(favoriteKey(host)) ? '取消收藏' : '收藏'} ${host.name}`}
+                          aria-pressed={favorites.includes(favoriteKey(host))}
+                          onClick={() => toggleFavorite(host)}
+                        >
+                          <Star className='favorite-star' />
+                        </Button>
+                        <Badge variant={host.busy ? 'warning' : 'success'}>
+                          {host.busy ? '使用中' : '在线'}
+                        </Badge>
+                      </div>
                     </div>
-                    <CardTitle>{host.name}</CardTitle>
+                    <CardTitle className='break-all'>{host.name}</CardTitle>
                     <CardDescription>
                       {host.kind === 'linux-x11'
                         ? 'Linux 系统桌面 · 实时控制'
