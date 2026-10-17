@@ -1067,7 +1067,15 @@ export function HostWorkspace({
             </Alert>
           )}
           <p className='text-xs text-muted-foreground'>
-            终端、文件、剪贴板与系统音频可在被控电脑的客户端窗口中启用。
+            终端与文件需在被控客户端开启权限。{' '}
+            <a
+              className='underline'
+              href='/guide/tools'
+              target='_blank'
+              rel='noreferrer'
+            >
+              查看使用指南
+            </a>
           </p>
         </div>
       </DialogContent>

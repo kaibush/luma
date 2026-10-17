@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import {
   Copy,
   KeyRound,
@@ -83,7 +84,12 @@ interface AuditEvent {
 }
 const date = (value: number | null) =>
   value ? new Date(value).toLocaleString() : '—'
-export function ManagementPage() {
+export function ManagementPage({
+  section = 'connection',
+}: {
+  section?: string
+}) {
+  const navigate = useNavigate()
   const { state, refresh, logout } = useRemoteAuth()
   const [settings, setSettings] = useState<ConnectionSettings | null>(null),
     [secret, setSecret] = useState(''),
@@ -182,7 +188,18 @@ export function ManagementPage() {
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
-        <Tabs defaultValue='connection' className='flex flex-col gap-5'>
+        <Tabs
+          value={section}
+          onValueChange={(value) => {
+            void (value === 'connection'
+              ? navigate({ to: '/management' })
+              : navigate({
+                  to: '/management/$section',
+                  params: { section: value },
+                }))
+          }}
+          className='flex flex-col gap-5'
+        >
           <TabsList className='grid h-auto w-full grid-cols-3 gap-1 sm:w-fit sm:grid-cols-5'>
             <TabsTrigger className='h-9' value='connection'>
               连接设置

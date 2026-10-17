@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as ClerkRouteRouteImport } from './routes/clerk/route'
+import { Route as GuideRouteImport } from './routes/guide'
 import { Route as HostRouteImport } from './routes/host'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as SetupRouteImport } from './routes/setup'
@@ -25,16 +26,21 @@ import { Route as errors404RouteImport } from './routes/(errors)/404'
 import { Route as errors500RouteImport } from './routes/(errors)/500'
 import { Route as errors503RouteImport } from './routes/(errors)/503'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
+import { Route as AuthenticatedConnectRouteImport } from './routes/_authenticated/connect'
 import { Route as AuthenticatedManagementRouteImport } from './routes/_authenticated/management'
 import { Route as AuthenticatedSettingsRouteRouteImport } from './routes/_authenticated/settings/route'
 import { Route as AuthenticatedSharesRouteImport } from './routes/_authenticated/shares'
 import { Route as ClerkauthRouteRouteImport } from './routes/clerk/(auth)/route'
 import { Route as ClerkAuthenticatedRouteRouteImport } from './routes/clerk/_authenticated/route'
+import { Route as GuideIndexRouteImport } from './routes/guide.index'
+import { Route as GuideTopicRouteImport } from './routes/guide.$topic'
 import { Route as ShareIdRouteImport } from './routes/share.$id'
 import { Route as AuthenticatedAppsIndexRouteImport } from './routes/_authenticated/apps/index'
 import { Route as AuthenticatedChatsIndexRouteImport } from './routes/_authenticated/chats/index'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 import { Route as AuthenticatedHelpCenterIndexRouteImport } from './routes/_authenticated/help-center/index'
+import { Route as AuthenticatedManagementIndexRouteImport } from './routes/_authenticated/management.index'
+import { Route as AuthenticatedManagementSectionRouteImport } from './routes/_authenticated/management.$section'
 import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
 import { Route as AuthenticatedSettingsAccountRouteImport } from './routes/_authenticated/settings/account'
 import { Route as AuthenticatedSettingsAppearanceRouteImport } from './routes/_authenticated/settings/appearance'
@@ -53,6 +59,11 @@ const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
 const ClerkRouteRoute = ClerkRouteRouteImport.update({
   id: '/clerk',
   path: '/clerk',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuideRoute = GuideRouteImport.update({
+  id: '/guide',
+  path: '/guide',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HostRoute = HostRouteImport.update({
@@ -125,6 +136,11 @@ const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedConnectRoute = AuthenticatedConnectRouteImport.update({
+  id: '/connect',
+  path: '/connect',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedManagementRoute = AuthenticatedManagementRouteImport.update({
   id: '/management',
   path: '/management',
@@ -148,6 +164,16 @@ const ClerkauthRouteRoute = ClerkauthRouteRouteImport.update({
 const ClerkAuthenticatedRouteRoute = ClerkAuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
   getParentRoute: () => ClerkRouteRoute,
+} as any)
+const GuideIndexRoute = GuideIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => GuideRoute,
+} as any)
+const GuideTopicRoute = GuideTopicRouteImport.update({
+  id: '/$topic',
+  path: '/$topic',
+  getParentRoute: () => GuideRoute,
 } as any)
 const ShareIdRoute = ShareIdRouteImport.update({
   id: '/share/$id',
@@ -175,6 +201,18 @@ const AuthenticatedHelpCenterIndexRoute =
     id: '/help-center/',
     path: '/help-center/',
     getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedManagementIndexRoute =
+  AuthenticatedManagementIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedManagementRoute,
+  } as any)
+const AuthenticatedManagementSectionRoute =
+  AuthenticatedManagementSectionRouteImport.update({
+    id: '/$section',
+    path: '/$section',
+    getParentRoute: () => AuthenticatedManagementRoute,
   } as any)
 const AuthenticatedSettingsIndexRoute =
   AuthenticatedSettingsIndexRouteImport.update({
@@ -236,6 +274,7 @@ const ClerkAuthenticatedUserManagementRoute =
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
   '/clerk': typeof ClerkauthRouteRouteWithChildren
+  '/guide': typeof GuideRouteWithChildren
   '/host': typeof HostRoute
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
@@ -250,10 +289,14 @@ export interface FileRoutesByFullPath {
   '/404': typeof errors404Route
   '/500': typeof errors500Route
   '/503': typeof errors503Route
-  '/management': typeof AuthenticatedManagementRoute
+  '/connect': typeof AuthenticatedConnectRoute
+  '/management': typeof AuthenticatedManagementRouteWithChildren
   '/shares': typeof AuthenticatedSharesRoute
+  '/guide/$topic': typeof GuideTopicRoute
   '/share/$id': typeof ShareIdRoute
+  '/guide/': typeof GuideIndexRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/management/$section': typeof AuthenticatedManagementSectionRoute
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
   '/settings/display': typeof AuthenticatedSettingsDisplayRoute
@@ -264,6 +307,7 @@ export interface FileRoutesByFullPath {
   '/apps/': typeof AuthenticatedAppsIndexRoute
   '/chats/': typeof AuthenticatedChatsIndexRoute
   '/help-center/': typeof AuthenticatedHelpCenterIndexRoute
+  '/management/': typeof AuthenticatedManagementIndexRoute
   '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/tasks/': typeof AuthenticatedTasksIndexRoute
   '/users/': typeof AuthenticatedUsersIndexRoute
@@ -283,11 +327,14 @@ export interface FileRoutesByTo {
   '/404': typeof errors404Route
   '/500': typeof errors500Route
   '/503': typeof errors503Route
-  '/management': typeof AuthenticatedManagementRoute
+  '/connect': typeof AuthenticatedConnectRoute
   '/shares': typeof AuthenticatedSharesRoute
+  '/guide/$topic': typeof GuideTopicRoute
   '/share/$id': typeof ShareIdRoute
   '/': typeof AuthenticatedIndexRoute
+  '/guide': typeof GuideIndexRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/management/$section': typeof AuthenticatedManagementSectionRoute
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
   '/settings/display': typeof AuthenticatedSettingsDisplayRoute
@@ -298,6 +345,7 @@ export interface FileRoutesByTo {
   '/apps': typeof AuthenticatedAppsIndexRoute
   '/chats': typeof AuthenticatedChatsIndexRoute
   '/help-center': typeof AuthenticatedHelpCenterIndexRoute
+  '/management': typeof AuthenticatedManagementIndexRoute
   '/settings': typeof AuthenticatedSettingsIndexRoute
   '/tasks': typeof AuthenticatedTasksIndexRoute
   '/users': typeof AuthenticatedUsersIndexRoute
@@ -306,6 +354,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/clerk': typeof ClerkRouteRouteWithChildren
+  '/guide': typeof GuideRouteWithChildren
   '/host': typeof HostRoute
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
@@ -322,11 +371,15 @@ export interface FileRoutesById {
   '/(errors)/404': typeof errors404Route
   '/(errors)/500': typeof errors500Route
   '/(errors)/503': typeof errors503Route
-  '/_authenticated/management': typeof AuthenticatedManagementRoute
+  '/_authenticated/connect': typeof AuthenticatedConnectRoute
+  '/_authenticated/management': typeof AuthenticatedManagementRouteWithChildren
   '/_authenticated/shares': typeof AuthenticatedSharesRoute
+  '/guide/$topic': typeof GuideTopicRoute
   '/share/$id': typeof ShareIdRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
+  '/guide/': typeof GuideIndexRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/_authenticated/management/$section': typeof AuthenticatedManagementSectionRoute
   '/_authenticated/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/_authenticated/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
   '/_authenticated/settings/display': typeof AuthenticatedSettingsDisplayRoute
@@ -337,6 +390,7 @@ export interface FileRoutesById {
   '/_authenticated/apps/': typeof AuthenticatedAppsIndexRoute
   '/_authenticated/chats/': typeof AuthenticatedChatsIndexRoute
   '/_authenticated/help-center/': typeof AuthenticatedHelpCenterIndexRoute
+  '/_authenticated/management/': typeof AuthenticatedManagementIndexRoute
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/_authenticated/tasks/': typeof AuthenticatedTasksIndexRoute
   '/_authenticated/users/': typeof AuthenticatedUsersIndexRoute
@@ -346,6 +400,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/clerk'
+    | '/guide'
     | '/host'
     | '/login'
     | '/setup'
@@ -360,10 +415,14 @@ export interface FileRouteTypes {
     | '/404'
     | '/500'
     | '/503'
+    | '/connect'
     | '/management'
     | '/shares'
+    | '/guide/$topic'
     | '/share/$id'
+    | '/guide/'
     | '/errors/$error'
+    | '/management/$section'
     | '/settings/account'
     | '/settings/appearance'
     | '/settings/display'
@@ -374,6 +433,7 @@ export interface FileRouteTypes {
     | '/apps/'
     | '/chats/'
     | '/help-center/'
+    | '/management/'
     | '/settings/'
     | '/tasks/'
     | '/users/'
@@ -393,11 +453,14 @@ export interface FileRouteTypes {
     | '/404'
     | '/500'
     | '/503'
-    | '/management'
+    | '/connect'
     | '/shares'
+    | '/guide/$topic'
     | '/share/$id'
     | '/'
+    | '/guide'
     | '/errors/$error'
+    | '/management/$section'
     | '/settings/account'
     | '/settings/appearance'
     | '/settings/display'
@@ -408,6 +471,7 @@ export interface FileRouteTypes {
     | '/apps'
     | '/chats'
     | '/help-center'
+    | '/management'
     | '/settings'
     | '/tasks'
     | '/users'
@@ -415,6 +479,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_authenticated'
     | '/clerk'
+    | '/guide'
     | '/host'
     | '/login'
     | '/setup'
@@ -431,11 +496,15 @@ export interface FileRouteTypes {
     | '/(errors)/404'
     | '/(errors)/500'
     | '/(errors)/503'
+    | '/_authenticated/connect'
     | '/_authenticated/management'
     | '/_authenticated/shares'
+    | '/guide/$topic'
     | '/share/$id'
     | '/_authenticated/'
+    | '/guide/'
     | '/_authenticated/errors/$error'
+    | '/_authenticated/management/$section'
     | '/_authenticated/settings/account'
     | '/_authenticated/settings/appearance'
     | '/_authenticated/settings/display'
@@ -446,6 +515,7 @@ export interface FileRouteTypes {
     | '/_authenticated/apps/'
     | '/_authenticated/chats/'
     | '/_authenticated/help-center/'
+    | '/_authenticated/management/'
     | '/_authenticated/settings/'
     | '/_authenticated/tasks/'
     | '/_authenticated/users/'
@@ -454,6 +524,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   ClerkRouteRoute: typeof ClerkRouteRouteWithChildren
+  GuideRoute: typeof GuideRouteWithChildren
   HostRoute: typeof HostRoute
   LoginRoute: typeof LoginRoute
   SetupRoute: typeof SetupRoute
@@ -484,6 +555,13 @@ declare module '@tanstack/react-router' {
       path: '/clerk'
       fullPath: '/clerk'
       preLoaderRoute: typeof ClerkRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guide': {
+      id: '/guide'
+      path: '/guide'
+      fullPath: '/guide'
+      preLoaderRoute: typeof GuideRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/host': {
@@ -584,6 +662,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/connect': {
+      id: '/_authenticated/connect'
+      path: '/connect'
+      fullPath: '/connect'
+      preLoaderRoute: typeof AuthenticatedConnectRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/management': {
       id: '/_authenticated/management'
       path: '/management'
@@ -619,6 +704,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ClerkAuthenticatedRouteRouteImport
       parentRoute: typeof ClerkRouteRoute
     }
+    '/guide/': {
+      id: '/guide/'
+      path: '/'
+      fullPath: '/guide/'
+      preLoaderRoute: typeof GuideIndexRouteImport
+      parentRoute: typeof GuideRoute
+    }
+    '/guide/$topic': {
+      id: '/guide/$topic'
+      path: '/$topic'
+      fullPath: '/guide/$topic'
+      preLoaderRoute: typeof GuideTopicRouteImport
+      parentRoute: typeof GuideRoute
+    }
     '/share/$id': {
       id: '/share/$id'
       path: '/share/$id'
@@ -653,6 +752,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/help-center/'
       preLoaderRoute: typeof AuthenticatedHelpCenterIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/management/': {
+      id: '/_authenticated/management/'
+      path: '/'
+      fullPath: '/management/'
+      preLoaderRoute: typeof AuthenticatedManagementIndexRouteImport
+      parentRoute: typeof AuthenticatedManagementRoute
+    }
+    '/_authenticated/management/$section': {
+      id: '/_authenticated/management/$section'
+      path: '/$section'
+      fullPath: '/management/$section'
+      preLoaderRoute: typeof AuthenticatedManagementSectionRouteImport
+      parentRoute: typeof AuthenticatedManagementRoute
     }
     '/_authenticated/settings/': {
       id: '/_authenticated/settings/'
@@ -750,9 +863,26 @@ const AuthenticatedSettingsRouteRouteWithChildren =
     AuthenticatedSettingsRouteRouteChildren,
   )
 
+interface AuthenticatedManagementRouteChildren {
+  AuthenticatedManagementSectionRoute: typeof AuthenticatedManagementSectionRoute
+  AuthenticatedManagementIndexRoute: typeof AuthenticatedManagementIndexRoute
+}
+
+const AuthenticatedManagementRouteChildren: AuthenticatedManagementRouteChildren =
+  {
+    AuthenticatedManagementSectionRoute: AuthenticatedManagementSectionRoute,
+    AuthenticatedManagementIndexRoute: AuthenticatedManagementIndexRoute,
+  }
+
+const AuthenticatedManagementRouteWithChildren =
+  AuthenticatedManagementRoute._addFileChildren(
+    AuthenticatedManagementRouteChildren,
+  )
+
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedSettingsRouteRoute: typeof AuthenticatedSettingsRouteRouteWithChildren
-  AuthenticatedManagementRoute: typeof AuthenticatedManagementRoute
+  AuthenticatedConnectRoute: typeof AuthenticatedConnectRoute
+  AuthenticatedManagementRoute: typeof AuthenticatedManagementRouteWithChildren
   AuthenticatedSharesRoute: typeof AuthenticatedSharesRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
@@ -765,7 +895,8 @@ interface AuthenticatedRouteRouteChildren {
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedSettingsRouteRoute: AuthenticatedSettingsRouteRouteWithChildren,
-  AuthenticatedManagementRoute: AuthenticatedManagementRoute,
+  AuthenticatedConnectRoute: AuthenticatedConnectRoute,
+  AuthenticatedManagementRoute: AuthenticatedManagementRouteWithChildren,
   AuthenticatedSharesRoute: AuthenticatedSharesRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
@@ -822,9 +953,22 @@ const ClerkRouteRouteWithChildren = ClerkRouteRoute._addFileChildren(
   ClerkRouteRouteChildren,
 )
 
+interface GuideRouteChildren {
+  GuideTopicRoute: typeof GuideTopicRoute
+  GuideIndexRoute: typeof GuideIndexRoute
+}
+
+const GuideRouteChildren: GuideRouteChildren = {
+  GuideTopicRoute: GuideTopicRoute,
+  GuideIndexRoute: GuideIndexRoute,
+}
+
+const GuideRouteWithChildren = GuideRoute._addFileChildren(GuideRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   ClerkRouteRoute: ClerkRouteRouteWithChildren,
+  GuideRoute: GuideRouteWithChildren,
   HostRoute: HostRoute,
   LoginRoute: LoginRoute,
   SetupRoute: SetupRoute,

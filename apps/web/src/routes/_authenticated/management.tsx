@@ -1,6 +1,5 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { ManagementPage } from '@/features/access/management'
+import { createFileRoute, Outlet } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_authenticated/management')({
-  component: ManagementPage,
+  component: Outlet,
 })

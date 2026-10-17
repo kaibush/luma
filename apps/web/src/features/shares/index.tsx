@@ -576,10 +576,17 @@ export function ScreenShares() {
               {shares.reduce((n, s) => n + s.viewers, 0)} 位访客在线
             </p>
           </div>
-          <Button onClick={() => setCreating(true)}>
-            <Plus className='size-4' />
-            创建分享
-          </Button>
+          <div className='flex items-center gap-2'>
+            <Button variant='ghost' size='sm' asChild>
+              <a href='/guide/sharing' target='_blank' rel='noreferrer'>
+                使用指南
+              </a>
+            </Button>
+            <Button onClick={() => setCreating(true)}>
+              <Plus className='size-4' />
+              创建分享
+            </Button>
+          </div>
         </div>
         <div className='flex flex-wrap items-center gap-3'>
           <div className='flex min-w-0 flex-1 items-center gap-2'>

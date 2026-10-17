@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useLocation } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import {
@@ -89,15 +89,21 @@ function SidebarMenuCollapsible({
   href: string
 }) {
   const { setOpenMobile } = useSidebar()
+  const active = checkIsActive(href, item)
+  const [open, setOpen] = useState(active)
+  useEffect(() => {
+    if (active) setOpen(true)
+  }, [href, active])
   return (
     <Collapsible
       asChild
-      defaultOpen={checkIsActive(href, item, true)}
+      open={open}
+      onOpenChange={setOpen}
       className='group/collapsible'
     >
       <SidebarMenuItem>
         <CollapsibleTrigger asChild>
-          <SidebarMenuButton tooltip={item.title}>
+          <SidebarMenuButton tooltip={item.title} isActive={active}>
             {item.icon && <item.icon />}
             <span>{item.title}</span>
             {item.badge && <NavBadge>{item.badge}</NavBadge>}
@@ -173,13 +179,8 @@ function SidebarMenuCollapsedDropdown({
   )
 }
 
-function checkIsActive(href: string, item: NavItem, mainNav = false) {
-  return (
-    href === item.url || // /endpint?search=param
-    href.split('?')[0] === item.url || // endpoint
-    !!item?.items?.filter((i) => i.url === href).length || // if child nav is active
-    (mainNav &&
-      href.split('/')[1] !== '' &&
-      href.split('/')[1] === item?.url?.split('/')[1])
-  )
+function checkIsActive(href: string, item: NavItem): boolean {
+  if (item.items) return item.items.some((child) => checkIsActive(href, child))
+  const clean = (url: string) => url.split(/[?#]/)[0].replace(/\/$/, '') || '/'
+  return clean(href) === clean(item.url || '')
 }

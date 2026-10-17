@@ -228,6 +228,11 @@ export function BrowserHost() {
             主机列表
           </a>
         </Button>
+        <Button variant='ghost' asChild>
+          <a href='/guide/install' target='_blank' rel='noreferrer'>
+            接入指南
+          </a>
+        </Button>
         <Button variant='outline' asChild>
           <a href='/shares'>打开屏幕共享</a>
         </Button>
@@ -368,12 +373,8 @@ export function BrowserHost() {
                     <a href='/management'>管理设置</a>
                   </Button>
                   <Button variant='ghost' asChild>
-                    <a
-                      href='/downloads/client-guide.md'
-                      target='_blank'
-                      rel='noreferrer'
-                    >
-                      完整安装说明
+                    <a href='/guide/install' target='_blank' rel='noreferrer'>
+                      详细接入指南
                     </a>
                   </Button>
                 </div>
