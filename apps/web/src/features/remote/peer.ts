@@ -6,6 +6,7 @@ import {
   type Quality,
   type Signal,
 } from '@remote/protocol'
+import { ToolClient } from './tool-client'
 
 export interface Telemetry {
   fps?: number
@@ -20,6 +21,10 @@ export interface PeerOptions {
   role: 'host' | 'controller'
   iceServers: IceServer[]
   quality: Quality
+  mode?: 'desktop' | 'tools'
+  tools?: boolean
+  audio?: boolean
+  onTools?: (client: ToolClient) => void
   stream?: MediaStream
   signal: (message: Signal) => void
   onStream?: (stream: MediaStream) => void
@@ -31,6 +36,9 @@ export interface PeerOptions {
 // Media and input never pass through the HTTP service. Native hosts implement the same contract.
 export class RemotePeer {
   readonly pc: RTCPeerConnection
+  tools?: ToolClient
+  private feedbackAt = 0
+  private mediaStream?: MediaStream
   private reliable?: RTCDataChannel
   private motion?: RTCDataChannel
   private pendingIce: RTCIceCandidateInit[] = []
@@ -61,11 +69,19 @@ export class RemotePeer {
       )
         options.onInput?.({ type: 'release-all' })
     }
-    this.pc.ontrack = (e) =>
-      options.onStream?.(e.streams[0] ?? new MediaStream([e.track]))
+    this.pc.ontrack = (e) => {
+      this.mediaStream ??= new MediaStream()
+      this.mediaStream.addTrack(e.track)
+      options.onStream?.(this.mediaStream)
+    }
     this.pc.ondatachannel = (e) => this.bind(e.channel)
     if (options.role === 'controller') {
-      this.pc.addTransceiver('video', { direction: 'recvonly' })
+      if (options.mode !== 'tools')
+        this.pc.addTransceiver('video', { direction: 'recvonly' })
+      if (options.audio)
+        this.pc.addTransceiver('audio', { direction: 'recvonly' })
+      if (options.tools)
+        this.bind(this.pc.createDataChannel('tools', { ordered: true }))
       this.bind(this.pc.createDataChannel('input', { ordered: true }))
       this.bind(
         this.pc.createDataChannel('motion', {
@@ -80,7 +96,9 @@ export class RemotePeer {
     // Prefer H.264 when both endpoints support it, retaining fallback codecs.
     const codecs = RTCRtpReceiver.getCapabilities?.('video')?.codecs
     if (codecs)
-      for (const transceiver of this.pc.getTransceivers()) {
+      for (const transceiver of this.pc
+        .getTransceivers()
+        .filter((t) => t.receiver.track.kind === 'video')) {
         transceiver.setCodecPreferences?.([
           ...codecs.filter((c) => c.mimeType.toLowerCase() === 'video/h264'),
           ...codecs.filter((c) => c.mimeType.toLowerCase() !== 'video/h264'),
@@ -91,6 +109,11 @@ export class RemotePeer {
     }, 1000)
   }
   private bind(channel: RTCDataChannel) {
+    if (channel.label === 'tools') {
+      this.tools = new ToolClient(channel)
+      channel.onopen = () => this.options.onTools?.(this.tools!)
+      return
+    }
     if (channel.label === 'input') this.reliable = channel
     else if (channel.label === 'motion') this.motion = channel
     else {
@@ -206,6 +229,18 @@ export class RemotePeer {
             : '直连'
       }
     })
+    if (
+      Date.now() - this.feedbackAt > 5000 &&
+      value.fps !== undefined &&
+      value.rttMs !== undefined
+    ) {
+      this.feedbackAt = Date.now()
+      this.sendInput({
+        type: 'feedback',
+        fps: Math.min(240, value.fps),
+        rtt: Math.min(10000, value.rttMs),
+      })
+    }
     this.options.onStats?.(value)
   }
   close() {
@@ -217,6 +252,7 @@ export class RemotePeer {
     )
       this.reliable.send(JSON.stringify({ type: 'release-all' }))
     clearInterval(this.timer)
+    this.tools?.close()
     this.pc.close()
     this.options.onInput?.({ type: 'release-all' })
   }

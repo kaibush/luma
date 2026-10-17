@@ -1,15 +1,15 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHmac, createHash, randomUUID } from 'node:crypto';
 import { WebSocket, WebSocketServer } from 'ws';
 import { Store, type Principal } from './store.js';
 import { cookieValue, registerAdmin } from './admin.js';
-import { authSchema, signalSchema, qualitySchema, type Host, type Session, type IceServer, type ServerMessage } from '@remote/protocol';
+import { authSchema, deviceStatsSchema, hostMetadataSchema, signalSchema, qualitySchema, type Host, type Session, type IceServer, type ServerMessage } from '@remote/protocol';
 
 export interface Config { controlToken: string; hostToken: string; origins: string[]; turnUrl?: string; turnSecret?: string; stunUrl?: string; logger?: boolean; dataPath?: string; secureCookies?: boolean }
 type HostEntry = { info: Host; ws: WebSocket };
-type SessionEntry = { info: Session; controller?: WebSocket; started: boolean };
+type SessionEntry = { info: Session; controller?: WebSocket; started: boolean; owner: Principal };
 
 
 export async function createApp(config: Config) {
@@ -48,18 +48,33 @@ export async function createApp(config: Config) {
   }, () => [...sessions.values()].map(s => ({ ...s.info, hostName: hosts.get(s.info.hostId)?.info.name || '离线主机', connected: !!s.controller })));
   app.get('/health', async () => ({ ok: true }));
   app.get('/api/hosts', async () => ({ hosts: [...hosts.values()].map(h => h.info) }));
-  app.post<{ Body: { hostId?: string; quality?: string } }>('/api/sessions', async (req, reply) => {
+  app.put<{ Params: { id: string } }>('/api/hosts/:id', async (req, reply) => {
+    const parsed = hostMetadataSchema.safeParse(req.body), host = hosts.get(req.params.id);
+    if (!parsed.success) return reply.code(400).send({ error: '分组或备注无效' });
+    if (!host) return reply.code(404).send({ error: '主机已离线' });
+    const meta = { ...store.hostMetadata(host.info.id), ...parsed.data };
+    store.saveHostMetadata(host.info.id, meta); Object.assign(host.info, meta);
+    return { host: host.info };
+  });
+  app.post<{ Body: { hostId?: string; quality?: string; mode?: string; audio?: boolean } }>('/api/sessions', async (req, reply) => {
     const quality = qualitySchema.safeParse(req.body?.quality ?? store.settings().defaultQuality);
     if (!quality.success || typeof req.body?.hostId !== 'string') return reply.code(400).send({ error: '会话参数无效' });
     const host = hosts.get(req.body.hostId);
     if (!host) return reply.code(404).send({ error: '主机已离线' });
     if (host.info.busy) return reply.code(409).send({ error: '主机正在使用中' });
-    const info: Session = { id: randomUUID(), hostId: host.info.id, quality: quality.data, expiresAt: Date.now() + 30_000 };
+    const mode = req.body.mode ?? 'desktop';
+    if (!['desktop', 'tools'].includes(mode) || (req.body.audio !== undefined && typeof req.body.audio !== 'boolean')) return reply.code(400).send({ error: '会话模式无效' });
+    if (mode === 'tools' && req.principal?.scope !== 'admin') return reply.code(403).send({ error: '终端和文件需要管理员登录' });
+    if (mode === 'tools' && !host.info.capabilities.terminal && !host.info.capabilities.files) return reply.code(400).send({ error: '请先在客户端启用终端或文件访问' });
+    const info: Session = { id: randomUUID(), hostId: host.info.id, quality: quality.data, expiresAt: Date.now() + 30_000, mode: mode as 'desktop' | 'tools', tools: req.principal?.scope === 'admin', audio: !!req.body.audio && !!host.info.capabilities.audio };
     host.info.busy = true;
-    sessions.set(info.id, { info, started: false });
+    sessions.set(info.id, { info, started: false, owner: req.principal! });
+    const metadata = { ...store.hostMetadata(host.info.id), lastConnectedAt: Date.now() };
+    store.saveHostMetadata(host.info.id, metadata); Object.assign(host.info, metadata);
+    store.audit(req.principal!.name, 'session.start', `${host.info.name} (${mode})`);
     return reply.code(201).send({ session: info, iceServers: iceServers(info.id) });
   });
-  app.delete<{ Params: { id: string } }>('/api/sessions/:id', async (req, reply) => { end(req.params.id, '会话已结束'); return reply.code(204).send(); });
+  app.delete<{ Params: { id: string } }>('/api/sessions/:id', async (req, reply) => { const s = sessions.get(req.params.id); if (s && (s.owner.id !== req.principal?.id || s.owner.kind !== req.principal?.kind)) return reply.code(403).send({ error: '非当前会话所有者' }); end(req.params.id, '会话已结束'); return reply.code(204).send(); });
   app.server.on('upgrade', (req, socket, head) => {
     if (req.url !== '/ws' || (req.headers.origin && !config.origins.includes(req.headers.origin)) || wss.clients.size >= 100) {
       socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); return;
@@ -86,17 +101,25 @@ export async function createApp(config: Config) {
         principals.set(ws, principal);
         clearTimeout(timeout);
         if (auth.role === 'host') {
-          role = 'host'; hostId = randomUUID();
-          hosts.set(hostId, { ws, info: { id: hostId, name: auth.name, busy: false, kind: auth.kind, capabilities: { video: true, systemInput: auth.kind !== 'browser', textInput: auth.kind === 'windows' ? 'unicode' : auth.kind === 'linux-x11' ? 'ascii' : 'test', maxFps: auth.kind !== 'browser' ? 60 : undefined } } });
-          send(ws, { type: 'ready', hostId });
+          role = 'host'; hostId = auth.deviceId ? createHash('sha256').update(`${principal.id}:${auth.deviceId}`).digest('hex') : randomUUID();
+          if (hosts.has(hostId)) { ws.close(1008, 'Device already connected'); hostId = undefined; return; }
+          hosts.set(hostId, { ws, info: { id: hostId, name: auth.name, busy: false, kind: auth.kind, ...store.hostMetadata(hostId), capabilities: { video: true, systemInput: auth.kind !== 'browser', ...auth.kind !== 'browser' ? auth.features : {}, textInput: auth.kind === 'browser' ? 'test' : auth.features?.clipboard || auth.kind === 'windows' ? 'unicode' : 'ascii', maxFps: auth.kind !== 'browser' ? 60 : undefined } } });
+          send(ws, { type: 'ready', hostId, protocol: 2 });
         } else {
           const s = sessions.get(auth.sessionId), host = s && hosts.get(s.info.hostId);
-          if (!s || !host || s.controller || s.info.expiresAt <= Date.now()) { ws.close(1008, 'Session unavailable'); return; }
+          if (!s || s.owner.id !== principal.id || s.owner.kind !== principal.kind || !host || s.controller || s.info.expiresAt <= Date.now()) { ws.close(1008, 'Session unavailable'); return; }
           role = 'controller'; sessionId = auth.sessionId; s.controller = ws;
           s.info.expiresAt = Date.now() + store.settings().sessionMinutes * 60_000;
           send(host.ws, { type: 'session', session: s.info, iceServers: iceServers(sessionId) });
           // Host prepares its peer before acknowledging ready; controller offers afterward.
         }
+        return;
+      }
+      if (!store.valid(principals.get(ws)!)) { ws.close(1008, 'Authorization expired'); return; }
+      if (role === 'host' && data && typeof data === 'object' && 'type' in data && data.type === 'stats') {
+        const stats = deviceStatsSchema.safeParse('stats' in data ? data.stats : null);
+        const host = hosts.get(hostId!);
+        if (stats.success && host) host.info.stats = { ...stats.data, sampledAt: Date.now() };
         return;
       }
       const parsed = signalSchema.safeParse(data);

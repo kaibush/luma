@@ -29,6 +29,11 @@ class DesktopVideo(VideoStreamTrack):
     def __init__(self, quality):
         super().__init__()
         profile = PROFILES[quality]
+        self.profile = profile
+        self.level = 0
+        self.good_samples = 0
+        self.last_feedback = 0
+        self.capture_ms = 0
         self.max_width = profile['width']
         self.max_height = profile['height']
         self.fps = profile['fps']
@@ -54,12 +59,32 @@ class DesktopVideo(VideoStreamTrack):
         height = max(2, int(shot.height * scale) // 2 * 2)
         return frame.reformat(width=width, height=height, format='yuv420p', interpolation='BILINEAR')
 
+    def feedback(self, event):
+        now = time.monotonic()
+        if now - self.last_feedback < 5: return
+        rtt, fps = event.get('rtt'), event.get('fps')
+        if not all(type(v) in (float, int) and math.isfinite(v) and v >= 0 for v in (rtt, fps)): return
+        self.last_feedback = now
+        overloaded = rtt > 250 or (fps > 0 and fps < self.fps * .65) or self.capture_ms > 1000 / self.fps
+        if overloaded:
+            self.level = min(2, self.level + 1); self.good_samples = 0
+        elif rtt < 120 and fps >= self.fps * .85:
+            self.good_samples += 1
+            if self.good_samples >= 6:
+                self.level = max(0, self.level - 1); self.good_samples = 0
+        else: self.good_samples = 0
+        scale = (1, .75, .5)[self.level]
+        self.max_width, self.max_height = int(self.profile['width'] * scale), int(self.profile['height'] * scale)
+        self.fps = self.profile['fps'] if self.level == 0 else min(30, self.profile['fps'])
+
     async def produce(self):
         try:
             while self.readyState == 'live':
                 await asyncio.sleep(max(0, self.due - time.monotonic()))
                 self.due = max(self.due + 1 / self.fps, time.monotonic())
+                capture_started = time.monotonic()
                 frame = await asyncio.get_running_loop().run_in_executor(self.executor, self.capture)
+                self.capture_ms = (time.monotonic() - capture_started) * 1000
                 frame.pts = round((time.monotonic() - self.started) * 90000)
                 frame.time_base = Fraction(1, 90000)
                 # Capture overlaps encoding. Slow consumers get the newest frame,

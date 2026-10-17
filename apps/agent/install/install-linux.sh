@@ -7,9 +7,17 @@ if ! python3 -c 'import venv, tkinter, ensurepip; import sys; assert sys.version
   if command -v apt-get >/dev/null; then
     echo '安装 Python 运行环境（需要本机 sudo 权限）…'
     sudo apt-get update
-    sudo apt-get install -y python3 python3-venv python3-tk libx11-6 libxtst6
+    sudo apt-get install -y python3 python3-venv python3-tk libx11-6 libxtst6 xclip libpulse0
   else
     echo '请先安装 Python 3.10+、venv、Tk、X11 和 XTest 运行库，再重试。'; exit 1
+  fi
+fi
+if ! command -v xclip >/dev/null || ! python3 -c 'import ctypes; ctypes.CDLL("libpulse.so.0")' 2>/dev/null; then
+  if command -v apt-get >/dev/null; then
+    sudo apt-get update
+    sudo apt-get install -y xclip libpulse0
+  else
+    echo '剪贴板与系统声音需要 xclip、libpulse；请用系统包管理器安装。'
   fi
 fi
 source_dir="$(cd -- "$(dirname -- "$0")" && pwd)"

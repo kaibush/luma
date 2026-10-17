@@ -75,6 +75,8 @@ export class Store {
   private get<T>(key: string): T | undefined { const row = this.db.prepare('SELECT value FROM kv WHERE key=?').get(key) as { value: string } | undefined; return row && JSON.parse(row.value); }
   private set(key: string, value: unknown) { this.db.prepare('INSERT INTO kv(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key, JSON.stringify(value)); }
   private transaction<T>(fn: () => T): T { this.db.exec('BEGIN IMMEDIATE'); try { const value = fn(); this.db.exec('COMMIT'); return value; } catch (e) { this.db.exec('ROLLBACK'); throw e; } }
+  hostMetadata(id: string) { return this.get<{ group: string; note: string; lastConnectedAt?: number }>(`host:${id}`) || { group: '', note: '' }; }
+  saveHostMetadata(id: string, value: { group: string; note: string; lastConnectedAt?: number }) { this.set(`host:${id}`, value); }
   initialized() { return !!this.get<Account>('account'); }
   account() { const account = this.get<Account>('account'); return account ? { username: account.username } : null; }
   credentials() { return this.get<Credentials>('settings')!; }

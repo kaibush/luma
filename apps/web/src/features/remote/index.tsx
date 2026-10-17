@@ -46,10 +46,11 @@ import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { useRemoteAuth, request } from '@/features/access/auth'
 import { api } from './api'
-import { Viewer } from './viewer'
+import { HostWorkspace } from './host-workspace'
+import { ReconnectingViewer as Viewer } from './reconnecting-viewer'
 
-// Names survive host reconnects; same-name hosts of the same kind share a favorite.
-const favoriteKey = (host: Host) => JSON.stringify([host.kind, host.name])
+// Stable device IDs preserve favorites across reconnects.
+const favoriteKey = (host: Host) => host.id
 function readFavorites(key: string): string[] {
   try {
     const value: unknown = JSON.parse(localStorage.getItem(key) || '[]')
@@ -68,6 +69,14 @@ export function RemoteDashboard() {
   const [favorites, setFavorites] = useState(() =>
     readFavorites(favoritesStorageKey)
   )
+  const [workspace, setWorkspace] = useState<Host | null>(null)
+  useEffect(() => {
+    if (workspace)
+      document
+        .getElementById('host-workspace')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [workspace?.id])
+  const [groupFilter, setGroupFilter] = useState('')
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('all')
   const qualityChosen = useRef(false)
@@ -139,7 +148,14 @@ export function RemoteDashboard() {
       const data = await api<{ session: Session; iceServers: IceServer[] }>(
         '/sessions',
         token,
-        { method: 'POST', body: JSON.stringify({ hostId: host.id, quality }) }
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            hostId: host.id,
+            quality,
+            audio: !!host.capabilities.audio,
+          }),
+        }
       )
       setActive({ host, ...data })
       setError('')
@@ -151,11 +167,13 @@ export function RemoteDashboard() {
   }
   const visibleHosts = hosts
     .filter((host) => {
-      const matches = `${host.name} ${host.kind}`
-        .toLowerCase()
-        .includes(query.trim().toLowerCase())
+      const matches =
+        `${host.name} ${host.kind} ${host.group || ''} ${host.note || ''}`
+          .toLowerCase()
+          .includes(query.trim().toLowerCase())
       return (
         matches &&
+        (!groupFilter || host.group === groupFilter) &&
         (filter !== 'favorites' || favorites.includes(favoriteKey(host))) &&
         (filter !== 'available' || !host.busy)
       )
@@ -163,7 +181,8 @@ export function RemoteDashboard() {
     .sort(
       (a, b) =>
         Number(favorites.includes(favoriteKey(b))) -
-        Number(favorites.includes(favoriteKey(a)))
+          Number(favorites.includes(favoriteKey(a))) ||
+        (b.lastConnectedAt || 0) - (a.lastConnectedAt || 0)
     )
   return (
     <>
@@ -238,6 +257,36 @@ export function RemoteDashboard() {
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
+        {workspace && (
+          <div id='host-workspace'>
+            <HostWorkspace
+              key={workspace.id}
+              host={hosts.find((h) => h.id === workspace.id) || workspace}
+              onClose={() => setWorkspace(null)}
+              onDesktop={() => {
+                setWorkspace(null)
+                void connect(workspace)
+              }}
+            />
+          </div>
+        )}
+        <Field>
+          <FieldLabel htmlFor='host-group-filter'>筛选分组</FieldLabel>
+          <Input
+            id='host-group-filter'
+            list='host-groups'
+            placeholder='全部分组'
+            value={groupFilter}
+            onChange={(e) => setGroupFilter(e.target.value)}
+          />
+          <datalist id='host-groups'>
+            {[...new Set(hosts.map((h) => h.group).filter(Boolean))].map(
+              (group) => (
+                <option key={group} value={group} />
+              )
+            )}
+          </datalist>
+        </Field>
         <section
           className='flex flex-col gap-5 rounded-2xl border bg-card p-4 sm:p-6'
           aria-label='主机列表'
@@ -354,8 +403,8 @@ export function RemoteDashboard() {
             </ToggleGroup>
           </div>
           <p className='text-xs text-muted-foreground' role='status'>
-            显示 {visibleHosts.length} 台 · 每 5 秒自动刷新 ·
-            收藏保存在此浏览器（同名同类型主机共享）
+            显示 {visibleHosts.length} 台 · 每 5 秒自动刷新 · 收藏保存在此浏览器
+            · 按收藏和最近连接排序
           </p>
           {loading && !hosts.length ? (
             <Skeleton className='h-48 w-full' />
@@ -430,6 +479,28 @@ export function RemoteDashboard() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
+                    <p className='mb-2 text-sm'>
+                      {host.group || '未分组'}
+                      {host.note ? ` · ${host.note}` : ''}
+                    </p>
+                    {host.stats && (
+                      <p className='mb-2 text-sm'>
+                        CPU {host.stats.cpu.toFixed(0)}% · 内存{' '}
+                        {(
+                          (host.stats.memoryUsed / host.stats.memoryTotal) *
+                          100
+                        ).toFixed(0)}
+                        % · 磁盘{' '}
+                        {(
+                          (host.stats.diskUsed / host.stats.diskTotal) *
+                          100
+                        ).toFixed(0)}
+                        %
+                        {Date.now() - host.stats.sampledAt > 15000
+                          ? '（已过期）'
+                          : ''}
+                      </p>
+                    )}
                     <p className='text-sm text-muted-foreground'>
                       {host.capabilities.systemInput
                         ? host.kind === 'windows'
@@ -438,7 +509,14 @@ export function RemoteDashboard() {
                         : '支持实时画面；此浏览器共享端仅用于输入测试。'}
                     </p>
                   </CardContent>
-                  <CardFooter>
+                  <CardFooter className='flex flex-col gap-2'>
+                    <Button
+                      variant='outline'
+                      className='w-full'
+                      onClick={() => setWorkspace(host)}
+                    >
+                      状态 / 终端 / 文件
+                    </Button>
                     <Button
                       className='w-full'
                       disabled={host.busy || loading}

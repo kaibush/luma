@@ -39,6 +39,10 @@ jobs:
         run: |
           python -m compileall -q apps/agent scripts/package-agent.py scripts/verify-agent-package.py
           bash -n apps/agent/install/install-linux.sh
+      - name: Install Agent test dependencies
+        run: python -m pip install -r apps/agent/requirements.lock
+      - name: Test Agent permissions, transfers, PTY and encoder fallback
+        run: python -m unittest discover -s apps/agent -p 'test_*.py'
       - name: Build archives from this commit
         run: python scripts/package-agent.py --output-dir "$RUNNER_TEMP/client-packages"
       - name: Verify archives and checksums

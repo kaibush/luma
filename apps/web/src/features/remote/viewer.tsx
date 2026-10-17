@@ -22,10 +22,12 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { api, sendSignal, signaling } from './api'
+import { ClipboardPanel } from './clipboard-panel'
 import { canFullscreen, enterDisplayMode } from './display-mode'
 import { ImmersiveHandle } from './immersive-handle'
 import { RemotePeer, type Telemetry } from './peer'
 import { RemoteKeyboard, sendChord } from './remote-keyboard'
+import type { ToolClient } from './tool-client'
 import { moveTouch, isTap, type TouchGesture } from './touchpad'
 
 export function Viewer({
@@ -34,12 +36,16 @@ export function Viewer({
   iceServers,
   token,
   onExit,
+  onRecover,
+  recoveryHint,
 }: {
   host: Host
   session: Session
   iceServers: IceServer[]
   token: string
   onExit: () => void
+  onRecover?: () => void
+  recoveryHint?: string
 }) {
   const container = useRef<HTMLDivElement>(null),
     video = useRef<HTMLVideoElement>(null),
@@ -47,6 +53,10 @@ export function Viewer({
   const [state, setState] = useState('准备连接'),
     [stats, setStats] = useState<Telemetry>({}),
     [error, setError] = useState('')
+  const [tools, setTools] = useState<ToolClient>()
+  const [muted, setMuted] = useState(true)
+  const recover = useRef(onRecover)
+  recover.current = onRecover
   const [panel, setPanel] = useState<'keyboard' | 'more' | null>(null)
   const [immersive, setImmersive] = useState(false)
   const [nativeFullscreen, setNativeFullscreen] = useState(false)
@@ -92,6 +102,8 @@ export function Viewer({
   useEffect(() => {
     const start = () => {
       let disposed = false
+      let disconnectTimer: ReturnType<typeof setTimeout> | undefined
+      let ended = false
       const ws = signaling(
         { role: 'controller', token, sessionId: session.id },
         (message) => {
@@ -101,6 +113,9 @@ export function Viewer({
               .offer()
               .catch(() => setError('协商失败，请重新连接'))
           else if (message.type === 'ended' || message.type === 'error') {
+            ended = true
+            if (message.type === 'ended' && message.reason === '主机已离线')
+              recover.current?.()
             setError(
               message.type === 'ended' ? message.reason : message.message
             )
@@ -110,8 +125,10 @@ export function Viewer({
               message as Parameters<RemotePeer['handle']>[0]
             )
         },
-        () => {
+        (event) => {
           if (!disposed) {
+            if (!ended && event.code !== 1008 && event.code !== 1000)
+              recover.current?.()
             setState('已断开')
             setError('连接已断开，请返回主机列表重试')
             connection.close()
@@ -120,6 +137,11 @@ export function Viewer({
       )
       const connection = new RemotePeer({
         role: 'controller',
+        tools: session.tools,
+        audio: session.audio,
+        onTools: (c) => {
+          if (!disposed) setTools(c)
+        },
         iceServers,
         quality: session.quality,
         signal: (m) => sendSignal(ws, { ...m, sessionId: session.id }),
@@ -134,7 +156,13 @@ export function Viewer({
         onState: (s) => {
           if (!disposed) {
             setState(s)
-            if (s === 'failed') setError('连接失败，请检查网络或 TURN 配置')
+            clearTimeout(disconnectTimer)
+            if (s === 'failed' && !ended) {
+              setError('连接中断，正在尝试恢复…')
+              recover.current?.()
+            }
+            if (s === 'disconnected' && !ended)
+              disconnectTimer = setTimeout(() => recover.current?.(), 5000)
             if (s === 'connected') setError('')
           }
         },
@@ -145,7 +173,8 @@ export function Viewer({
       peer.current = connection
       const timeout = setTimeout(() => {
         if (connection.pc.connectionState !== 'connected') {
-          setError('连接超时，请检查主机与网络；跨网络可能需要 TURN')
+          setError('连接超时，正在尝试恢复…')
+          if (!ended) recover.current?.()
           connection.close()
           ws.close()
         }
@@ -173,7 +202,19 @@ export function Viewer({
           down: e.type === 'keydown',
         })
       }
-      document.addEventListener('visibilitychange', release)
+      const resume = () => {
+        release()
+        if (
+          document.visibilityState === 'visible' &&
+          !ended &&
+          ['failed', 'closed', 'disconnected'].includes(
+            connection.pc.connectionState
+          )
+        )
+          recover.current?.()
+      }
+      window.addEventListener('online', resume)
+      document.addEventListener('visibilitychange', resume)
       window.addEventListener('blur', release)
       window.addEventListener('keydown', key)
       window.addEventListener('keyup', key)
@@ -182,6 +223,8 @@ export function Viewer({
       return () => {
         disposed = true
         clearTimeout(timeout)
+        clearTimeout(disconnectTimer)
+        setTools(undefined)
         cancelAnimationFrame(raf.current)
         connection.close()
         sendSignal(ws, { type: 'end', sessionId: session.id })
@@ -190,7 +233,8 @@ export function Viewer({
         void api(`/sessions/${session.id}`, token, { method: 'DELETE' }).catch(
           () => {}
         )
-        document.removeEventListener('visibilitychange', release)
+        document.removeEventListener('visibilitychange', resume)
+        window.removeEventListener('online', resume)
         window.removeEventListener('blur', release)
         window.removeEventListener('keydown', key)
         window.removeEventListener('keyup', key)
@@ -367,7 +411,7 @@ export function Viewer({
           ref={video}
           autoPlay
           playsInline
-          muted
+          muted={muted}
           tabIndex={0}
           aria-label={
             touchpad
@@ -488,13 +532,13 @@ export function Viewer({
         />
         {state !== 'connected' && (
           <div className='pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-muted-foreground'>
-            {error || '正在建立安全视频连接…'}
+            {recoveryHint || error || '正在建立安全视频连接…'}
           </div>
         )}
       </div>
-      {error && (
+      {(error || recoveryHint) && (
         <Alert variant='destructive'>
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>{recoveryHint || error}</AlertDescription>
         </Alert>
       )}
       {!immersive && panel === 'keyboard' && (
@@ -555,6 +599,25 @@ export function Viewer({
               向下滚动
             </Button>
           </div>
+          {session.audio && (
+            <Button
+              variant='outline'
+              onClick={() => {
+                setMuted(!muted)
+                if (video.current) {
+                  video.current.muted = !muted
+                  void video.current
+                    .play()
+                    .catch(() => setError('请点击画面开始播放声音'))
+                }
+              }}
+            >
+              {muted ? '播放系统声音' : '静音'}
+            </Button>
+          )}
+          {host.capabilities.clipboard && tools && (
+            <ClipboardPanel client={tools} />
+          )}
           <p className='mt-3 text-xs text-muted-foreground'>
             {stats.transport ?? '正在检测连接'} · {stats.fps ?? '—'} FPS ·{' '}
             {stats.mbps?.toFixed(1) ?? '—'} Mbps ·{' '}

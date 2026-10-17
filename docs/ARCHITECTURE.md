@@ -1,6 +1,6 @@
 # 架构与扩展
 
-当前已新增 `apps/agent`：Python aiortc + MSS 直接采集 Linux X11 桌面，XTest 注入系统鼠标键盘，沿用同一信令与输入协议。生产实例连接 XFCE `:10`，软件编码最高 30 FPS，TURN 中继已启用并测试。下文 Rust/硬编与其他平台方案仍为后续设计。
+当前已新增 `apps/agent`：Python aiortc + MSS 直接采集 Linux X11 桌面，XTest 注入系统鼠标键盘，沿用同一信令与输入协议。生产实例连接 XFCE `:10`，提供软件编码与 NVIDIA 硬编回退路径、按画质配置最高 60 FPS，TURN 中继已启用并测试。下文 Rust/硬编与其他平台方案仍为后续设计。
 
 ## 核心决策
 
@@ -19,7 +19,7 @@ flowchart LR
   Agent --> Input[操作系统键鼠注入]
 ```
 
-Linux X11 主机端已实现系统采集/注入。`BrowserHost` 仍是 getDisplayMedia 的浏览器测试适配器，输入只发送到测试面板。当前 X11 端用 aiortc 软件编码；硬件编码尚未接入。
+Linux X11 主机端已实现系统采集/注入。`BrowserHost` 仍是 getDisplayMedia 的浏览器测试适配器，输入只发送到测试面板。当前 X11 端用 aiortc，优先探测 NVIDIA H.264 硬编，失败回退 libx264 ultrafast；Intel/AMD 专用硬编尚未接入。
 
 ## 模块边界
 
@@ -65,7 +65,7 @@ HostRuntime.startSession(lease, capabilities) / stopSession(reason)
 - `motion` 通道 unordered / maxRetransmits=0；rAF 合并移动事件，积压超过 4 KiB 丢弃旧移动。按钮事件包含最终坐标，避免与移动通道乱序导致误点。
 - `input` 通道 reliable / ordered，用于按键和按钮状态。积压超过 64 KiB 时终止连接，接收端必须 releaseAll，不能丢掉 keyup 然后继续会话。
 - 视频编码与输入处理分线程，输入不等待屏幕帧；界面统计每秒更新，测试面板每 200ms 更新。
-- WebRTC 已有媒体拥塞控制；当前实现的是静态档位上限，未实现根据设备温度/丢帧自动切档。未来增加滞回和冷却时间，避免频繁振荡。
+- WebRTC 已有媒体拥塞控制；当前在静态档位上限内，根据接收 FPS、RTT 和采集耗时分级调整分辨率与 FPS，5 秒采样，连续 6 次良好样本才上调一级；尚未使用设备温度。
 
 ## 验收计划
 
@@ -90,3 +90,10 @@ HostRuntime.startSession(lease, capabilities) / stopSession(reason)
 4. **多人/部署扩展**：设备配对与证书轮换、账户与资源授权、PostgreSQL 审计、Redis 会话租约、分区域 TURN。一个会话固定归属一个信令实例，跨实例消息带 sessionId/epoch，避免双重控制。
 
 不默认引入 SFU：当前一对一控制直接 WebRTC 最简单。多人观看、录制或广播确有需求时再增加媒体服务与独立授权。
+
+
+## 设备工具协议
+
+主机认证可附带持久化 `deviceId` 和终端、文件、剪贴板、音频能力。服务端对 Token 身份和设备 ID 派生稳定主机 ID，元数据保存在 SQLite；只有确认 `ready.protocol >= 2` 后，Agent 才发送状态，兼容旧 API。
+
+会话有 `desktop` / `tools` 两种模式，共用现有独占租约。工具模式需要管理员登录，预留和 WS 连接绑定同一 principal。服务端发给 Agent 的 `tools` 授权与 Agent 本机开关同时满足后，才打开可靠 `tools` DataChannel。终端命令、文件和剪贴板不经 API 中转；每个请求有独立 ID、超时、队列和背压限制。文件一次一块 12 KiB，终端输入输出也限制长度。会话结束关闭 PTY/ConPTY、上传临时文件和下载句柄。

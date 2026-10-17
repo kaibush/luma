@@ -127,3 +127,13 @@ Token 原文使用 AES-256-GCM 加密存储，校验仍使用摘要。加密文�
 ### 移动网络中继
 
 未指定传输协议的 `turn:` 地址会同时下发默认 UDP 和 `?transport=tcp` 两个中继入口。明确指定协议的地址保持原配置。TCP 可作为 UDP 受限时的备用路径，但服务端本地中继测试不能证明手机运营商到服务器的线路可达；若两种路径均受限，需要进一步配置可达的 TURN/TLS 中继。
+
+### 0.2 Agent 升级
+
+系统服务使用 `ProtectHome=read-only`。首次升级前，先在服务外初始化设备 ID：
+
+```sh
+PYTHONPATH=apps/agent apps/agent/.venv/bin/python -c 'from client_config import device_id; device_id()'
+```
+
+`deploy/install-agent.sh` 已包含此步骤。新 Agent 只有收到服务端 `protocol: 2` 确认才上报设备状态，因此可先升级 Agent，再升级 API。桌面客户端的终端、文件、剪贴板、声音开关默认关闭；系统服务按需在其环境配置中开启对应 `RC_*` 变量。系统服务的只读文件系统限制仍生效，完整文件写入/用户终端建议使用登录桌面内的普通用户客户端。

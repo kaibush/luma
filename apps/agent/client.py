@@ -61,7 +61,7 @@ class Client:
         self.root, self.process = root, None
         self.messages = queue.Queue()
         root.title('Remote Console · 被控客户端')
-        root.geometry('570x510'); root.minsize(500, 460)
+        root.geometry('570x660'); root.minsize(500, 620)
         body = ttk.Frame(root, padding=24); body.pack(fill='both', expand=True)
         ttk.Label(body, text='连接你的远程控制台', font=('', 18, 'bold')).pack(anchor='w')
         ttk.Label(body, text='安装在被控电脑上 · 登录桌面后自动接入', padding=(0, 8)).pack(anchor='w')
@@ -75,6 +75,11 @@ class Client:
             ttk.Entry(body, textvariable=value, show='•' if key == 'token' else '').pack(fill='x')
         self.autostart = tk.BooleanVar(value=initial['autostart'])
         ttk.Checkbutton(body, text='登录本机桌面后自动连接', variable=self.autostart).pack(anchor='w', pady=12)
+        self.permissions = {}
+        for key, label in [('terminal', '允许管理员打开远程终端'), ('files', '允许管理员访问本用户主目录文件'), ('clipboard', '允许文本剪贴板与中文粘贴输入'), ('audio', '允许共享系统播放声音（不采集麦克风）')]:
+            value = tk.BooleanVar(value=initial.get(key, False))
+            self.permissions[key] = value
+            ttk.Checkbutton(body, text=label, variable=value).pack(anchor='w', pady=2)
         actions = ttk.Frame(body); actions.pack(fill='x')
         self.start_button = ttk.Button(actions, text='保存并连接', command=self.start); self.start_button.pack(side='left')
         self.stop_button = ttk.Button(actions, text='停止远控', command=self.stop, state='disabled'); self.stop_button.pack(side='left', padx=8)
@@ -91,7 +96,7 @@ class Client:
         try:
             if sys.platform != 'win32' and (os.environ.get('XDG_SESSION_TYPE') == 'wayland' or not os.environ.get('DISPLAY')):
                 raise ValueError('请在 Linux 的 X11/Xorg 图形桌面内启动客户端；暂不支持 Wayland 和纯命令行服务器。')
-            save_config(CONFIG, {**{k: v.get() for k, v in self.fields.items()}, 'autostart': self.autostart.get()})
+            save_config(CONFIG, {**{k: v.get() for k, v in self.fields.items()}, 'autostart': self.autostart.get(), **{k: v.get() for k, v in self.permissions.items()}})
             set_autostart(self.autostart.get())
             self.stop()
             python = Path(sys.executable)

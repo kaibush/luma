@@ -5,8 +5,16 @@ import profiles from './quality-profiles.json';
 export const qualityProfiles = profiles;
 export type Quality = keyof typeof qualityProfiles;
 export const qualitySchema = z.enum(['ultrafast', 'smooth', 'responsive', 'balanced', 'sharp']);
+export const deviceStatsSchema = z.object({
+  cpu: z.number().min(0).max(100), memoryUsed: z.number().nonnegative(), memoryTotal: z.number().positive(),
+  diskUsed: z.number().nonnegative(), diskTotal: z.number().positive(), uptime: z.number().nonnegative(),
+  platform: z.string().max(160), version: z.string().max(40), encoder: z.string().max(80),
+});
+export type DeviceStats = z.infer<typeof deviceStatsSchema> & { sampledAt: number };
+export const agentFeaturesSchema = z.object({ terminal: z.boolean(), files: z.boolean(), clipboard: z.boolean(), audio: z.boolean() });
+export const hostMetadataSchema = z.object({ group: z.string().trim().max(60), note: z.string().trim().max(500) });
 export const authSchema = z.discriminatedUnion('role', [
-  z.object({ type: z.literal('auth'), role: z.literal('host'), token: z.string().max(256), name: z.string().min(1).max(64), kind: z.enum(['browser', 'linux-x11', 'windows']).default('browser') }),
+  z.object({ type: z.literal('auth'), role: z.literal('host'), token: z.string().max(256), name: z.string().min(1).max(64), kind: z.enum(['browser', 'linux-x11', 'windows']).default('browser'), deviceId: z.string().uuid().optional(), features: agentFeaturesSchema.optional() }),
   z.object({ type: z.literal('auth'), role: z.literal('controller'), token: z.string().max(256), sessionId: z.string().uuid() }),
 ]);
 const signalPayloadSchema = z.discriminatedUnion('type', [
@@ -17,11 +25,11 @@ const signalPayloadSchema = z.discriminatedUnion('type', [
 ]);
 export const signalSchema = signalPayloadSchema.and(z.object({ sessionId: z.string().uuid() }));
 export type Signal = z.infer<typeof signalPayloadSchema>;
-export interface Host { id: string; name: string; busy: boolean; kind: 'browser' | 'linux-x11' | 'windows'; capabilities: { video: true; systemInput: boolean; textInput?: 'ascii' | 'unicode' | 'test'; maxFps?: number } }
-export interface Session { id: string; hostId: string; quality: Quality; expiresAt: number }
+export interface Host { id: string; name: string; busy: boolean; kind: 'browser' | 'linux-x11' | 'windows'; capabilities: { video: true; systemInput: boolean; textInput?: 'ascii' | 'unicode' | 'test'; maxFps?: number; terminal?: boolean; files?: boolean; clipboard?: boolean; audio?: boolean }; group?: string; note?: string; lastConnectedAt?: number; stats?: DeviceStats }
+export interface Session { id: string; hostId: string; quality: Quality; expiresAt: number; mode?: 'desktop' | 'tools'; tools?: boolean; audio?: boolean }
 export interface IceServer { urls: string | string[]; username?: string; credential?: string }
 export type ServerMessage = Signal
-  | { type: 'ready'; hostId?: string }
+  | { type: 'ready'; hostId?: string; protocol?: number }
   | { type: 'session'; session: Session; iceServers: IceServer[] }
   | { type: 'ended'; reason: string }
   | { type: 'error'; message: string };
@@ -34,6 +42,7 @@ export const inputSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('key'), code: z.string().min(1).max(64), down: z.boolean() }),
   z.object({ type: z.literal('text'), text: z.string().max(2048) }),
   z.object({ type: z.literal('release-all') }),
+  z.object({ type: z.literal('feedback'), rtt: z.number().min(0).max(10000), fps: z.number().min(0).max(240) }),
 ]);
 export type InputEvent = z.infer<typeof inputSchema>;
 

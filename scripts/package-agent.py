@@ -14,7 +14,7 @@ parser.add_argument('--output-dir', type=Path, default=ROOT / 'apps/web/public/d
 OUT = parser.parse_args().output_dir.resolve()
 OUT.mkdir(parents=True, exist_ok=True)
 shutil.copy2(ROOT / 'docs/CLIENTS.md', OUT / 'client-guide.md')
-FILES = ['client.py', 'client_config.py', 'main.py', 'desktop.py', 'windows_input.py', 'requirements.lock']
+FILES = ['client.py', 'client_config.py', 'main.py', 'desktop.py', 'windows_input.py', 'host_tools.py', 'media.py', 'requirements.lock']
 with tempfile.TemporaryDirectory() as temp:
     package = Path(temp) / 'remote-console-agent'
     package.mkdir()

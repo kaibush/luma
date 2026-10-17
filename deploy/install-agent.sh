@@ -7,6 +7,8 @@ command -v turnserver >/dev/null || { echo 'Install coturn first: apt-get instal
 [[ -f /etc/remote-console/environment ]] || { echo 'Deploy the API configuration first.' >&2; exit 1; }
 python3 -m venv apps/agent/.venv
 apps/agent/.venv/bin/pip install -r apps/agent/requirements.lock
+# Initialize before the service's ProtectHome=read-only sandbox starts.
+PYTHONPATH=apps/agent apps/agent/.venv/bin/python -c 'from client_config import device_id; device_id()'
 python3 - <<'PY'
 from pathlib import Path
 import secrets

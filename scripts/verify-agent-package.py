@@ -19,7 +19,7 @@ for name, digest in checksums.items():
     assert hashlib.sha256((root / name).read_bytes()).hexdigest() == digest, name
 
 expected = {f'remote-console-agent/{name}' for name in [
-    'client.py', 'client_config.py', 'main.py', 'desktop.py', 'windows_input.py',
+    'client.py', 'client_config.py', 'main.py', 'desktop.py', 'windows_input.py', 'host_tools.py', 'media.py',
     'requirements.lock', 'quality-profiles.json', 'README.md',
     'install-linux.sh', 'install-windows.ps1', 'install-windows.cmd',
 ]}

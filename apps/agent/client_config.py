@@ -1,6 +1,7 @@
 """Per-user client configuration; no server deployment files required."""
 import json
 import os
+import uuid
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -24,7 +25,7 @@ def validate_config(value):
         raise ValueError('主机名称须为 1–64 个字符，不能包含换行')
     if not token or len(token) > 256 or any(c.isspace() for c in token):
         raise ValueError('请输入有效的主机密钥（Token），不要使用管理员密码')
-    return {'url': url, 'name': name, 'token': token, 'autostart': bool(value.get('autostart', True))}
+    return {**{key: bool(value.get(key, False)) for key in ('terminal', 'files', 'clipboard', 'audio')}, 'url': url, 'name': name, 'token': token, 'autostart': bool(value.get('autostart', True))}
 
 
 def signal_url(config):
@@ -47,3 +48,14 @@ def save_config(path, value):
 
 def load_config(path):
     return validate_config(json.loads(Path(path).read_text(encoding='utf-8')))
+
+
+def device_id():
+    path = config_dir() / 'device-id'
+    if path.exists(): return str(uuid.UUID(path.read_text().strip()))
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        with path.open('x') as stream: stream.write(str(uuid.uuid4()))
+        path.chmod(0o600)
+    except FileExistsError: pass
+    return str(uuid.UUID(path.read_text().strip()))

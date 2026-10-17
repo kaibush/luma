@@ -56,3 +56,20 @@ Chromium 浏览器 4 项测试通过：触控模式回归；全屏能力缺失/�
 - `npx tsx scripts/agent-client-smoke.mts`：临时 API、独立 Xvfb 桌面、从发布包解压的主机端，验证注册、真实画面像素、鼠标/文本/按键、断开释放修饰键和受管进程停止后下线。
 - `xvfb-run -a apps/agent/.venv/bin/python scripts/agent-gui-smoke.py`：配置保存、私有权限、单实例锁、启动/停止和启用/禁用自动启动。
 - Python 单测覆盖 Windows SendInput ABI、Unicode 代理对、滚动方向、参数校验和按键释放；服务端测试覆盖 Windows 主机注册及能力。当前环境没有 Windows，以上不能代替 Windows 安装器、实际屏幕采集和系统输入真机验收；安装包标注预览版。
+
+## 设备工具回归
+
+```sh
+npm test
+npm run typecheck
+npm run build
+apps/agent/.venv/bin/python -m unittest discover -s apps/agent -p 'test_*.py'
+npx tsx scripts/tools-smoke.mjs
+apps/agent/.venv/bin/python scripts/audio-smoke.py
+```
+
+`tools-smoke.mjs` 启动独立 API、Vite、Xvfb、临时 Agent 和测试管理员；验证设备状态、分组、真实 PTY、文件上传下载、桌面链路、文本剪贴板及会话清理。需要 Xvfb、xclip 和 Playwright Chromium，使用本地 18987/18988 端口，不使用生产密钥。
+
+`audio-smoke.py` 启动独立 PulseAudio null sink，播放生成的 440 Hz 音调并校验 48 kHz 双声道、20 ms 帧及非零振幅，不采集真实桌面声音或麦克风。
+
+720p 合成办公画面编码对比（90 帧，相同画面与目标码率）：原编码 CPU 时间 4.847 秒，ultrafast 路径 2.634 秒（约减少 46%）；编码字节数 29,512 → 38,531。此数字仅说明该合成工作负载下的编码取舍，不代表整机 CPU 降幅、真实视频质量或端到端延迟。硬件加速效果需要 GPU 真机另测。

@@ -24,7 +24,7 @@ export async function api<T>(
 export function signaling(
   auth: object,
   onMessage: (message: ServerMessage) => void,
-  onClose: () => void
+  onClose: (event: CloseEvent) => void
 ) {
   const ws = new WebSocket(
     `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`
