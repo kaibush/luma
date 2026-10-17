@@ -88,3 +88,20 @@ npm start
 在 [接入此电脑](https://rc.lvyrix.com/host) 下载客户端。Linux X11 客户端提供当前用户安装脚本、配置窗口和登录桌面后自启动；Windows 10/11 x64 提供预览版安装器和普通桌面输入适配，尚需 Windows 真机验收。两者均填写主机 Token 后主动接入现有控制台，无需在被控电脑部署 API/TURN。详见 [客户端安装与卸载](docs/CLIENTS.md)。
 
 运行 `npm run package:agent` 生成不含密钥的下载包，然后执行构建发布；`deploy/publish.sh` 已包含打包步骤。
+
+客户端压缩包已纳入 Git，存放在 `apps/web/public/downloads/`：
+
+- `remote-console-linux.tar.gz`：Linux 安装包。
+- `remote-console-windows.zip`：Windows 预览版安装包。
+- `SHA256SUMS.txt`：压缩包校验值。
+- `client-guide.md`：安装、停止与卸载说明。
+
+生成方式（在项目根目录运行，需要 Python 3）：
+
+```sh
+npm run package:agent
+```
+
+打包脚本 `scripts/package-agent.py` 按明确的文件清单收集 `apps/agent/` 中的客户端源码、安装器和依赖版本，加入画质配置与安装文档，再生成 TAR.GZ / ZIP 和 SHA-256 校验值。这是源码加自动安装器的压缩包，不是编译后的独立可执行文件；不包含主机密钥、用户配置、虚拟环境或服务器数据库。
+
+修改客户端后重新运行打包命令，并将生成的 `apps/web/public/downloads/` 文件与源码一起提交。推送 GitHub 后，仓库中也会包含安装包。网页构建会把该目录复制到 `apps/web/dist/downloads/`，发布时再同步至服务器的 `/var/www/remote-console/downloads/`。
