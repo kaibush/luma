@@ -177,6 +177,11 @@ class HostTools:
             if not self.closed: await self.send(dict(event='terminal-exit'))
 
     def file_op(self, op, data):
+        if op == 'files.mkdir':
+            target = self.path(data.get('path', ''))
+            if target == self.root: raise ValueError('请填写文件夹名称')
+            target.mkdir()
+            return True
         if op == 'files.list':
             path = self.path(data.get('path', ''))
             offset = data.get('offset', 0)
@@ -194,8 +199,8 @@ class HostTools:
                         if not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode)): continue
                         entries.append(dict(name=entry.name, directory=stat.S_ISDIR(info.st_mode), size=info.st_size))
                     except OSError: continue
-                else: return dict(entries=entries, next=None)
-            return dict(entries=entries, next=offset+len(entries))
+                else: return dict(entries=entries, next=None, root=str(self.root))
+            return dict(entries=entries, next=offset+len(entries), root=str(self.root))
         if op == 'files.cancel': self.cancel_files(); return True
         if op == 'files.upload':
             self.cancel_files()

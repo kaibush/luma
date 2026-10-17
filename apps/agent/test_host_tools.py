@@ -50,6 +50,17 @@ class ToolTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError): await self.call('files.upload', path='result.txt', size=0)
         with self.assertRaises(ValueError): await self.call('files.upload', path='huge.txt', size=2**30)
 
+    async def test_create_folder_stays_in_shared_root(self):
+        await self.call('files.mkdir', path='new-folder')
+        listing = await self.call('files.list', path='')
+        self.assertEqual(listing['root'], self.directory.name)
+        self.assertTrue(any(e['name'] == 'new-folder' and e['directory'] for e in listing['entries']))
+        for invalid in ['', '../outside', '/tmp/outside']:
+            with self.assertRaises(ValueError): await self.call('files.mkdir', path=invalid)
+        with self.assertRaises(FileExistsError): await self.call('files.mkdir', path='new-folder')
+        self.tools.allowed['files'] = False
+        with self.assertRaises(ValueError): await self.call('files.mkdir', path='denied')
+
     async def test_file_boundary_and_permissions(self):
         for path in ['../outside', '/etc/passwd']:
             with self.assertRaises(ValueError): await self.call('files.download', path=path)

@@ -8,6 +8,7 @@ afterEach(() => vi.restoreAllMocks())
 test('missing host token explains the requirement instead of silently disabling sharing', async () => {
   const capture = vi.spyOn(navigator.mediaDevices, 'getDisplayMedia')
   const screen = await render(<BrowserHost />)
+  await screen.getByRole('button', { name: '浏览器接入', exact: true }).click()
   await screen.getByRole('button', { name: '选择屏幕并上线' }).click()
   await expect
     .element(screen.getByText(/请先填写主机密钥/))
@@ -23,6 +24,7 @@ test('canceled browser picker gives a visible explanation and can be retried', a
     new DOMException('Denied', 'NotAllowedError')
   )
   const screen = await render(<BrowserHost />)
+  await screen.getByRole('button', { name: '浏览器接入', exact: true }).click()
   await screen
     .getByLabelText('主机密钥', { exact: true })
     .fill('test-host-token')
@@ -44,6 +46,7 @@ test('stopping while the browser picker is pending releases the subsequently sel
     })
   )
   const screen = await render(<BrowserHost />)
+  await screen.getByRole('button', { name: '浏览器接入', exact: true }).click()
   await screen
     .getByLabelText('主机密钥', { exact: true })
     .fill('test-host-token')
