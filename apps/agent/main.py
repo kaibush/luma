@@ -1,5 +1,7 @@
 """Persistent Linux X11 host using the same signaling protocol as BrowserHost."""
 import asyncio
+import argparse
+import sys
 import json
 import logging
 import os
@@ -10,6 +12,9 @@ import websockets
 from aiortc import RTCConfiguration, RTCIceServer, RTCPeerConnection, RTCSessionDescription
 from aiortc.sdp import candidate_from_sdp
 from aiortc.codecs import h264
+if sys.platform == 'win32':
+    from windows_input import enable_dpi_awareness
+    enable_dpi_awareness()
 from desktop import DesktopInput, DesktopVideo
 
 # aiortc 1.14 defaults to a 1/30 encoder time base, which collapses 60 FPS
@@ -58,6 +63,7 @@ class Agent:
 
     async def start_session(self, message):
         await self.stop_session()
+        log.info('正在建立远程桌面会话')
         self.input = DesktopInput()
         self.session = message['session']['id']
         self.track = DesktopVideo(message['session']['quality'])
@@ -135,13 +141,13 @@ class Agent:
                 probe = DesktopInput(); probe.close()
                 async with websockets.connect(os.environ.get('SIGNAL_URL', 'ws://127.0.0.1:8798/ws'), max_size=65536, ping_interval=20, open_timeout=10) as ws:
                     self.ws = ws
-                    await self.send({'type': 'auth', 'role': 'host', 'token': os.environ['HOST_TOKEN'], 'name': os.environ.get('HOST_NAME', '本机 Linux 桌面'), 'kind': 'linux-x11'})
+                    await self.send({'type': 'auth', 'role': 'host', 'token': os.environ['HOST_TOKEN'], 'name': os.environ.get('HOST_NAME', '本机 Linux 桌面'), 'kind': 'windows' if sys.platform == 'win32' else 'linux-x11'})
                     async for raw in ws:
                         message = json.loads(raw)
                         kind = message['type']
                         if kind == 'ready':
                             retry = 1
-                            log.info('Desktop registered on DISPLAY=%s', os.environ.get('DISPLAY'))
+                            log.info('在线，等待远程连接')
                         elif kind == 'session':
                             await self.start_session(message)
                         elif kind in ('ended', 'end'):
@@ -161,7 +167,7 @@ class Agent:
             except asyncio.CancelledError:
                 raise
             except Exception as error:
-                log.warning('Host reconnecting (%s)', type(error).__name__)
+                log.warning('连接断开，正在重试；请检查网络、主机密钥和桌面会话 (%s)', type(error).__name__)
             finally:
                 await self.stop_session()
             await asyncio.sleep(retry)
@@ -171,11 +177,32 @@ class Agent:
 async def main():
     agent = Agent()
     task = asyncio.create_task(agent.run())
+    loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
-        asyncio.get_running_loop().add_signal_handler(sig, task.cancel)
+        try: loop.add_signal_handler(sig, task.cancel)
+        except NotImplementedError: pass  # Windows ProactorEventLoop.
+    if '--managed' in sys.argv:
+        # The configuration window owns this process. EOF also ends sharing.
+        import threading
+        def parent_input():
+            sys.stdin.readline()
+            loop.call_soon_threadsafe(task.cancel)
+        threading.Thread(target=parent_input, daemon=True).start()
     try: await task
     except asyncio.CancelledError: pass
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config')
+    parser.add_argument('--managed', action='store_true')
+    args = parser.parse_args()
+    if args.config:
+        from client_config import load_config, signal_url
+        config = load_config(args.config)
+        os.environ.update(HOST_TOKEN=config['token'], HOST_NAME=config['name'], SIGNAL_URL=signal_url(config))
+    if sys.platform != 'win32' and os.environ.get('XDG_SESSION_TYPE') == 'wayland':
+        raise SystemExit('暂不支持 Wayland，请注销后选择 Xorg/X11 桌面会话')
+    if not os.environ.get('HOST_TOKEN'):
+        raise SystemExit('请先打开客户端填写主机密钥')
     asyncio.run(main())

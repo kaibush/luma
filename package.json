@@ -15,7 +15,8 @@
     "start": "npm run start -w @remote/server",
     "setup": "node scripts/setup.mjs",
     "test:e2e": "node scripts/smoke.mjs",
-    "test:native": "node scripts/native-smoke.mjs"
+    "test:native": "node scripts/native-smoke.mjs",
+    "package:agent": "python3 scripts/package-agent.py"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

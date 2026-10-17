@@ -87,7 +87,7 @@ export async function createApp(config: Config) {
         clearTimeout(timeout);
         if (auth.role === 'host') {
           role = 'host'; hostId = randomUUID();
-          hosts.set(hostId, { ws, info: { id: hostId, name: auth.name, busy: false, kind: auth.kind, capabilities: { video: true, systemInput: auth.kind === 'linux-x11', textInput: auth.kind === 'linux-x11' ? 'ascii' : 'test', maxFps: auth.kind === 'linux-x11' ? 60 : undefined } } });
+          hosts.set(hostId, { ws, info: { id: hostId, name: auth.name, busy: false, kind: auth.kind, capabilities: { video: true, systemInput: auth.kind !== 'browser', textInput: auth.kind === 'windows' ? 'unicode' : auth.kind === 'linux-x11' ? 'ascii' : 'test', maxFps: auth.kind !== 'browser' ? 60 : undefined } } });
           send(ws, { type: 'ready', hostId });
         } else {
           const s = sessions.get(auth.sessionId), host = s && hosts.get(s.info.hostId);

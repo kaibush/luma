@@ -6,6 +6,7 @@ cd "$project_root"
 [[ "$EUID" -eq 0 ]] || { echo 'Run as root to install the systemd and Caddy configuration.' >&2; exit 1; }
 [[ -f /etc/remote-console/environment ]] || { echo 'Create /etc/remote-console/environment first; see docs/DEPLOYMENT.md.' >&2; exit 1; }
 
+npm run package:agent
 npm run build
 install -d -m 755 /var/www/remote-console
 # Retain old hashed assets for browser tabs that are still running the prior release.

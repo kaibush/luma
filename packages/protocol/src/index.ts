@@ -6,7 +6,7 @@ export const qualityProfiles = profiles;
 export type Quality = keyof typeof qualityProfiles;
 export const qualitySchema = z.enum(['ultrafast', 'smooth', 'responsive', 'balanced', 'sharp']);
 export const authSchema = z.discriminatedUnion('role', [
-  z.object({ type: z.literal('auth'), role: z.literal('host'), token: z.string().max(256), name: z.string().min(1).max(64), kind: z.enum(['browser', 'linux-x11']).default('browser') }),
+  z.object({ type: z.literal('auth'), role: z.literal('host'), token: z.string().max(256), name: z.string().min(1).max(64), kind: z.enum(['browser', 'linux-x11', 'windows']).default('browser') }),
   z.object({ type: z.literal('auth'), role: z.literal('controller'), token: z.string().max(256), sessionId: z.string().uuid() }),
 ]);
 const signalPayloadSchema = z.discriminatedUnion('type', [
@@ -17,7 +17,7 @@ const signalPayloadSchema = z.discriminatedUnion('type', [
 ]);
 export const signalSchema = signalPayloadSchema.and(z.object({ sessionId: z.string().uuid() }));
 export type Signal = z.infer<typeof signalPayloadSchema>;
-export interface Host { id: string; name: string; busy: boolean; kind: 'browser' | 'linux-x11'; capabilities: { video: true; systemInput: boolean; textInput?: 'ascii' | 'test'; maxFps?: number } }
+export interface Host { id: string; name: string; busy: boolean; kind: 'browser' | 'linux-x11' | 'windows'; capabilities: { video: true; systemInput: boolean; textInput?: 'ascii' | 'unicode' | 'test'; maxFps?: number } }
 export interface Session { id: string; hostId: string; quality: Quality; expiresAt: number }
 export interface IceServer { urls: string | string[]; username?: string; credential?: string }
 export type ServerMessage = Signal

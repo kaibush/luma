@@ -60,3 +60,20 @@ test('session creation requires controller authentication', async () => {
   try { assert.equal((await app.inject({method: 'POST', url: '/api/sessions', payload: {hostId: 'x'}})).statusCode, 401) }
   finally { await app.close() }
 })
+
+test('Windows native hosts advertise system input and Unicode capability', async () => {
+  const app = await createApp({ controlToken, hostToken, origins: [], logger: false })
+  await app.listen({ host: '127.0.0.1', port: 0 })
+  const port = (app.server.address() as { port: number }).port
+  const host = new WebSocket(`ws://127.0.0.1:${port}/ws`)
+  try {
+    await once(host, 'open')
+    const ready = message(host)
+    host.send(JSON.stringify({ type: 'auth', role: 'host', kind: 'windows', name: 'Windows PC', token: hostToken }))
+    await ready
+    const entry = (await app.inject({ url: '/api/hosts', headers })).json().hosts[0]
+    assert.equal(entry.kind, 'windows')
+    assert.equal(entry.capabilities.systemInput, true)
+    assert.equal(entry.capabilities.textInput, 'unicode')
+  } finally { host.terminate(); await app.close() }
+})

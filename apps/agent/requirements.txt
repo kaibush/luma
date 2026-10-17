@@ -1,4 +1,4 @@
 aiortc==1.14.0
 mss==10.1.0
-python-xlib==0.33
+python-xlib==0.33; sys_platform == "linux"
 websockets==15.0.1

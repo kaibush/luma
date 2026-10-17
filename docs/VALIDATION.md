@@ -49,3 +49,10 @@
 Chromium 浏览器 4 项测试通过：触控模式回归；全屏能力缺失/权限拒绝自动使用沉浸模式；横屏锁定失败不误报全屏失败；快捷组合与自定义修饰键的按下/释放顺序、F5、文字校验、收起键盘及释放按键。检查 844×390、390×844 和 390×380 布局，横屏键盘采用侧边布局。生产构建通过。测试模拟浏览器权限限制，不等同于 iOS 26 真机验收。
 
 同一组 4 项测试也已在 WebKit 中通过（`TEST_BROWSER=webkit npm run test -w @remote/web -- src/features/remote/viewer.test.tsx src/features/remote/display-mode.test.ts`）。发布后确认域名返回新键盘/沉浸模式资源、standalone manifest、主屏幕图标，API 健康检查通过。WebKit 自动化仍不能替代 iOS 26 真机的浏览器栏行为验收。
+
+## 可安装客户端（2026-10-17）
+
+- Linux 安装脚本在独立 HOME 的普通用户环境完成依赖安装、应用菜单快捷方式创建并打开配置窗口。
+- `npx tsx scripts/agent-client-smoke.mts`：临时 API、独立 Xvfb 桌面、从发布包解压的主机端，验证注册、真实画面像素、鼠标/文本/按键、断开释放修饰键和受管进程停止后下线。
+- `xvfb-run -a apps/agent/.venv/bin/python scripts/agent-gui-smoke.py`：配置保存、私有权限、单实例锁、启动/停止和启用/禁用自动启动。
+- Python 单测覆盖 Windows SendInput ABI、Unicode 代理对、滚动方向、参数校验和按键释放；服务端测试覆盖 Windows 主机注册及能力。当前环境没有 Windows，以上不能代替 Windows 安装器、实际屏幕采集和系统输入真机验收；安装包标注预览版。

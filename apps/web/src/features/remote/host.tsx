@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { qualityProfiles, type InputEvent } from '@remote/protocol'
-import { ArrowLeft, Monitor, Radio, Square } from 'lucide-react'
+import { ArrowLeft, Download, Monitor, Radio, Square } from 'lucide-react'
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -183,9 +183,85 @@ export function BrowserHost() {
       <div>
         <h1 className='text-3xl font-semibold tracking-tight'>接入此电脑</h1>
         <p className='mt-2 text-muted-foreground'>
-          共享画面，验证从手机到桌面的连接。
+          在这台电脑安装客户端，即可通过控制台远程操作。
         </p>
       </div>
+      <div className='grid gap-4 md:grid-cols-2'>
+        <Card>
+          <CardHeader>
+            <CardTitle>Linux 客户端</CardTitle>
+            <CardDescription>X11 / Xorg 桌面 · 优先支持</CardDescription>
+          </CardHeader>
+          <CardContent className='flex flex-col gap-3 text-sm'>
+            <p>
+              下载安装包并解压，在本机桌面终端运行{' '}
+              <code>bash install-linux.sh</code>。安装后会打开配置窗口。
+            </p>
+            <p className='text-muted-foreground'>
+              推荐 Ubuntu / Debian。暂不支持 Wayland；请使用桌面用户安装。
+            </p>
+          </CardContent>
+          <CardFooter>
+            <Button asChild>
+              <a href='/downloads/remote-console-linux.tar.gz' download>
+                <Download data-icon='inline-start' />
+                下载 Linux 客户端
+              </a>
+            </Button>
+          </CardFooter>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              Windows 客户端 <Badge variant='warning'>预览版</Badge>
+            </CardTitle>
+            <CardDescription>Windows 10 / 11 x64 · 普通桌面</CardDescription>
+          </CardHeader>
+          <CardContent className='flex flex-col gap-3 text-sm'>
+            <p>
+              下载并解压，双击 <code>install-windows.cmd</code>
+              ，按提示安装。完成后可从桌面快捷方式打开。
+            </p>
+            <p className='text-muted-foreground'>
+              首次安装需要联网。尚未通过 Windows 真机验收；不支持锁屏和 UAC
+              安全桌面。
+            </p>
+          </CardContent>
+          <CardFooter>
+            <Button asChild variant='outline'>
+              <a href='/downloads/remote-console-windows.zip' download>
+                <Download data-icon='inline-start' />
+                下载 Windows 预览版
+              </a>
+            </Button>
+          </CardFooter>
+        </Card>
+      </div>
+      <Alert>
+        <Monitor />
+        <AlertTitle>三步接入其他电脑</AlertTitle>
+        <AlertDescription>
+          <ol className='list-decimal ps-5'>
+            <li>
+              管理员在「管理设置 → Token 管理」为这台电脑创建「主机」密钥。
+            </li>
+            <li>
+              在被控电脑安装客户端，填写主机名称和密钥，点击「保存并连接」。控制台地址填写本站地址。
+            </li>
+            <li>
+              客户端显示在线后，回到主机列表点击「连接桌面」。可设置登录本机桌面后自动接入。
+            </li>
+          </ol>
+          <a
+            className='underline'
+            href='/downloads/client-guide.md'
+            target='_blank'
+            rel='noreferrer'
+          >
+            安装、停止与卸载说明
+          </a>
+        </AlertDescription>
+      </Alert>
       <Alert>
         <Monitor />
         <AlertTitle>浏览器共享端</AlertTitle>

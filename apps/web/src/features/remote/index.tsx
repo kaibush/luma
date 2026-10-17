@@ -424,13 +424,17 @@ export function RemoteDashboard() {
                     <CardDescription>
                       {host.kind === 'linux-x11'
                         ? 'Linux 系统桌面 · 实时控制'
-                        : '浏览器共享端 · 视频与输入测试'}
+                        : host.kind === 'windows'
+                          ? 'Windows 桌面 · 实时控制'
+                          : '浏览器共享端 · 视频与输入测试'}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <p className='text-sm text-muted-foreground'>
                       {host.capabilities.systemInput
-                        ? '支持系统鼠标、键盘与英文文本。软件编码，卡顿时建议选择 540p 或 360p。'
+                        ? host.kind === 'windows'
+                          ? '支持普通桌面的鼠标、键盘与文本输入。锁屏和 UAC 安全桌面不可操作。'
+                          : '支持系统鼠标、键盘与英文文本。卡顿时建议选择 540p 或 360p。'
                         : '支持实时画面；此浏览器共享端仅用于输入测试。'}
                     </p>
                   </CardContent>
@@ -453,8 +457,8 @@ export function RemoteDashboard() {
           <ShieldCheck />
           <AlertTitle>连接你的实际桌面</AlertTitle>
           <AlertDescription>
-            选择 Linux
-            系统桌面即可查看并操作本机。浏览器共享端仍仅用于链路测试；当前系统文本输入支持英文和数字。
+            安装 Linux 或 Windows
+            客户端后即可查看并操作对应电脑。浏览器共享端仅用于画面与链路测试。
           </AlertDescription>
         </Alert>
       </Main>

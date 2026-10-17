@@ -4,6 +4,7 @@ import json
 import math
 import os
 import time
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from fractions import Fraction
 from pathlib import Path
@@ -12,13 +13,16 @@ import mss
 from av import VideoFrame
 from aiortc import VideoStreamTrack
 from aiortc.mediastreams import MediaStreamError
-from Xlib import X, XK, display
-from Xlib.ext import xtest
+if sys.platform != 'win32':
+    from Xlib import X, XK, display
+    from Xlib.ext import xtest
 
 
 # Shared with the UI and API so advertised capture limits stay in sync.
-PROFILES = json.loads((Path(__file__).resolve().parents[2] /
-                       'packages/protocol/src/quality-profiles.json').read_text())
+_profiles = Path(__file__).with_name('quality-profiles.json')
+if not _profiles.exists():
+    _profiles = Path(__file__).resolve().parents[2] / 'packages/protocol/src/quality-profiles.json'
+PROFILES = json.loads(_profiles.read_text())
 
 
 class DesktopVideo(VideoStreamTrack):
@@ -37,7 +41,7 @@ class DesktopVideo(VideoStreamTrack):
 
     def capture(self):
         if self.screen is None:
-            self.screen = mss.mss(display=os.environ.get('DISPLAY', ':10'), with_cursor=True)
+            self.screen = mss.mss(**({'display': os.environ.get('DISPLAY', ':0')} if sys.platform != 'win32' else {}), with_cursor=True)
         shot = self.screen.grab(self.screen.monitors[0])
         frame = VideoFrame(shot.width, shot.height, 'bgra')
         data = shot.raw
@@ -189,3 +193,7 @@ class DesktopInput:
     def close(self):
         self.release()
         self.d.close()
+
+
+if sys.platform == 'win32':
+    from windows_input import WindowsInput as DesktopInput
