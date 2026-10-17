@@ -7,6 +7,7 @@ export type Share = {
   enabled: boolean
   online: boolean
   viewers: number
+  expiresAt: number | null
   createdAt: number
 }
 export type ShareMessage = ServerMessage & { sessionId?: string }

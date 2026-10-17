@@ -91,3 +91,38 @@ test('share keys survive restart encrypted at rest, not exposed by anonymous API
     assert.equal((await app.inject({ url: `/api/public/shares/${share.id}` })).statusCode, 401);
   } finally { await app.close(); rmSync(directory, { recursive: true, force: true }); }
 });
+
+test('share expiry disconnects viewers and publisher, rejects tickets, and renewal changes key', { timeout: 15000 }, async () => {
+  const app = await createApp({ controlToken, hostToken, origins: [origin], logger: false });
+  const sockets: WebSocket[] = [];
+  try {
+    const headers = await setup(app);
+    await app.listen({ host: '127.0.0.1', port: 0 });
+    const url = `ws://127.0.0.1:${(app.server.address() as { port: number }).port}/share-ws`;
+    const socket = async (cookie?: string) => { const ws = new WebSocket(url, { origin, headers: cookie ? { cookie } : {} }); sockets.push(ws); await once(ws, 'open'); return ws; };
+    assert.equal((await app.inject({ method: 'POST', url: '/api/manage/shares', headers, payload: { name: 'Past', expiresAt: Date.now() - 1 } })).statusCode, 400);
+    const share = (await app.inject({ method: 'POST', url: '/api/manage/shares', headers, payload: { name: 'Timed', expiresAt: Date.now() + 60000 } })).json().share;
+    assert.ok(share.expiresAt > Date.now());
+    const expiry = `/api/manage/shares/${share.id}/expiry`;
+    assert.equal((await app.inject({ method: 'POST', url: expiry, payload: { expiresAt: null } })).statusCode, 403);
+    assert.equal((await app.inject({ method: 'POST', url: expiry, headers, payload: { expiresAt: -1 } })).statusCode, 400);
+    const pub = await socket(headers.cookie), ready = message(pub);
+    pub.send(JSON.stringify({ type: 'auth', role: 'publisher', shareId: share.id })); await ready;
+    const join = () => app.inject({ method: 'POST', url: `/api/public/shares/${share.id}/join`, payload: { key: share.key } });
+    const ticket = (await join()).json().ticket;
+    const viewer = await socket(), invitation = message(pub), session = message(viewer);
+    viewer.send(JSON.stringify({ type: 'auth', role: 'viewer', ticket })); await session; await invitation;
+    const staleTicket = (await join()).json().ticket;
+    const ended = message(viewer), pubClosed = once(pub, 'close');
+    assert.equal((await app.inject({ method: 'POST', url: expiry, headers, payload: { expiresAt: Date.now() + 100 } })).statusCode, 200);
+    assert.match((await ended).reason, /到期/); await pubClosed;
+    assert.equal((await join()).statusCode, 403);
+    const stale = await socket(), denied = once(stale, 'close');
+    stale.send(JSON.stringify({ type: 'auth', role: 'viewer', ticket: staleTicket })); assert.equal((await denied)[0], 1008);
+    assert.equal((await app.inject({ method: 'POST', url: `/api/manage/shares/${share.id}/enable`, headers })).statusCode, 400);
+    const renewed = (await app.inject({ method: 'POST', url: expiry, headers, payload: { expiresAt: null } })).json().share;
+    assert.equal(renewed.expiresAt, null); assert.notEqual(renewed.key, share.key);
+    assert.equal((await app.inject({ method: 'POST', url: `/api/manage/shares/${share.id}/enable`, headers })).statusCode, 200);
+    assert.equal((await join()).statusCode, 403);
+  } finally { for (const ws of sockets) ws.terminate(); await app.close(); }
+});

@@ -24,13 +24,23 @@ import { api, sendSignal } from '@/features/remote/api'
 import { RemotePeer } from '@/features/remote/peer'
 import { shareLink, shareSocket, type Share } from './connection'
 
+function localDate(value: number | null) {
+  if (value === null) return ''
+  const date = new Date(value)
+  return new Date(value - date.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 16)
+}
+
 function ShareCard({
   share,
   pending,
   capturing,
   onStart,
   onAction,
+  onExpiry,
 }: {
+  onExpiry: (expiresAt: number | null) => void
   share: Share
   pending: boolean
   capturing: boolean
@@ -41,6 +51,9 @@ function ShareCard({
     key?: string
   ) => void
 }) {
+  const [expiry, setExpiry] = useState(localDate(share.expiresAt))
+  useEffect(() => setExpiry(localDate(share.expiresAt)), [share.expiresAt])
+  const isExpired = share.expiresAt !== null && share.expiresAt <= Date.now()
   const [key, setKey] = useState(''),
     [copied, setCopied] = useState(false)
   return (
@@ -49,11 +62,13 @@ function ShareCard({
         <div className='flex flex-wrap items-center justify-between gap-2'>
           <CardTitle>{share.name}</CardTitle>
           <Badge variant={share.online ? 'success' : 'secondary'}>
-            {!share.enabled
-              ? '已停止'
-              : share.online
-                ? `${share.viewers} 人观看`
-                : '等待开始共享'}
+            {isExpired
+              ? '已到期'
+              : !share.enabled
+                ? '已停止'
+                : share.online
+                  ? `${share.viewers} 人观看`
+                  : '等待开始共享'}
           </Badge>
         </div>
         <CardDescription>
@@ -62,6 +77,30 @@ function ShareCard({
       </CardHeader>
       <CardContent>
         <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor={`expiry-${share.id}`}>
+              授权码到期时间
+            </FieldLabel>
+            <Input
+              id={`expiry-${share.id}`}
+              type='datetime-local'
+              value={expiry}
+              onChange={(e) => setExpiry(e.target.value)}
+            />
+            <FieldDescription>
+              留空表示不限时，按当前设备时区设置。到期后自动停止共享。当前：
+              {share.expiresAt === null
+                ? '不限时'
+                : new Date(share.expiresAt).toLocaleString()}
+            </FieldDescription>
+          </Field>
+          <Button
+            variant='outline'
+            disabled={pending}
+            onClick={() => onExpiry(expiry ? new Date(expiry).getTime() : null)}
+          >
+            保存有效期
+          </Button>
           <Field>
             <FieldLabel htmlFor={`link-${share.id}`}>
               观看链接（包含密钥）
@@ -110,7 +149,7 @@ function ShareCard({
       </CardContent>
       <CardFooter className='flex flex-wrap gap-2'>
         <Button
-          disabled={pending || capturing || share.online}
+          disabled={pending || capturing || share.online || isExpired}
           onClick={onStart}
         >
           <Monitor data-icon='inline-start' />
@@ -149,7 +188,8 @@ function ShareCard({
 }
 export function ScreenShares() {
   const [shares, setShares] = useState<Share[]>([]),
-    [name, setName] = useState('我的屏幕')
+    [name, setName] = useState('我的屏幕'),
+    [expiry, setExpiry] = useState('')
   const [error, setError] = useState(''),
     [status, setStatus] = useState(''),
     [pending, setPending] = useState(false),
@@ -372,7 +412,10 @@ export function ScreenShares() {
             try {
               await api('/manage/shares', '', {
                 method: 'POST',
-                body: JSON.stringify({ name }),
+                body: JSON.stringify({
+                  name,
+                  expiresAt: expiry ? new Date(expiry).getTime() : null,
+                }),
               })
               await refresh()
               setStatus('共享已创建，点击「选择屏幕并开始」后即可观看。')
@@ -394,6 +437,20 @@ export function ScreenShares() {
                 onChange={(e) => setName(e.target.value)}
                 placeholder='例如：产品演示'
               />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor='create-expiry'>
+                授权码到期时间（可选）
+              </FieldLabel>
+              <Input
+                id='create-expiry'
+                type='datetime-local'
+                value={expiry}
+                onChange={(e) => setExpiry(e.target.value)}
+              />
+              <FieldDescription>
+                留空表示不限时。到期后链接失效，已有观看者也会断开。
+              </FieldDescription>
             </Field>
             <Button disabled={pending} type='submit'>
               创建共享并生成密钥
@@ -440,6 +497,24 @@ export function ScreenShares() {
               capturing={!!active}
               onStart={() => void start(share)}
               onAction={(...args) => void action(...args)}
+              onExpiry={async (expiresAt) => {
+                setPending(true)
+                setError('')
+                try {
+                  await api(`/manage/shares/${share.id}/expiry`, '', {
+                    method: 'POST',
+                    body: JSON.stringify({ expiresAt }),
+                  })
+                  await refresh()
+                  setStatus(
+                    '有效期已保存。已到期的共享会生成新密钥，请重新开启并复制链接。'
+                  )
+                } catch (e) {
+                  setError((e as Error).message)
+                } finally {
+                  setPending(false)
+                }
+              }}
             />
           ))}
         </div>

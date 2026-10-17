@@ -6,12 +6,14 @@ import { signalSchema, type IceServer } from '@remote/protocol';
 import { Store, type Principal } from './store.js';
 import { cookieValue } from './admin.js';
 
-type ShareRow = { id: string; name: string; keyHash: string; sealed: string; enabled: number; epoch: number; createdAt: number };
+type ShareRow = { id: string; name: string; keyHash: string; sealed: string; enabled: number; epoch: number; createdAt: number; expiresAt: number | null };
 type Publisher = { ws: WebSocket; principal: Principal };
 type Viewer = { id: string; shareId: string; epoch: number; ws: WebSocket; expiresAt: number; ready: boolean };
 const hash = (key: string) => createHash('sha256').update(key).digest('hex');
 const idSchema = z.string().uuid();
 const keySchema = z.string().min(16).max(128);
+const expirySchema = z.number().int().positive().max(8640000000000000).nullable();
+const expired = (share: ShareRow) => share.expiresAt !== null && share.expiresAt <= Date.now();
 const authSchema = z.discriminatedUnion('role', [
   z.object({ type: z.literal('auth'), role: z.literal('publisher'), shareId: idSchema }),
   z.object({ type: z.literal('auth'), role: z.literal('viewer'), ticket: z.string().length(43) }),
@@ -22,6 +24,7 @@ export function registerShares(app: FastifyInstance, store: Store, origins: stri
     id TEXT PRIMARY KEY, name TEXT NOT NULL, keyHash TEXT NOT NULL, sealed TEXT NOT NULL,
     enabled INTEGER NOT NULL, epoch INTEGER NOT NULL, createdAt INTEGER NOT NULL
   )`);
+  if (!(store.db.prepare('PRAGMA table_info(screen_shares)').all() as { name: string }[]).some(c => c.name === 'expiresAt')) store.db.exec('ALTER TABLE screen_shares ADD COLUMN expiresAt INTEGER');
   const publishers = new Map<string, Publisher>(), viewers = new Map<string, Viewer>();
   const tickets = new Map<string, { shareId: string; epoch: number; expiresAt: number }>();
   const wss = new WebSocketServer({ noServer: true, maxPayload: 65536, perMessageDeflate: false });
@@ -46,20 +49,34 @@ export function registerShares(app: FastifyInstance, store: Store, origins: stri
     }
   };
   const describe = (share: ShareRow) => ({ id: share.id, name: share.name, key: store.unsealShare(share.id, share.sealed), enabled: !!share.enabled,
-    online: publishers.has(share.id), viewers: [...viewers.values()].filter(v => v.shareId === share.id).length, createdAt: share.createdAt });
+    online: publishers.has(share.id), viewers: [...viewers.values()].filter(v => v.shareId === share.id).length, createdAt: share.createdAt, expiresAt: share.expiresAt });
   const rotate = (id: string, key = randomBytes(32).toString('base64url')) => {
     store.db.prepare('UPDATE screen_shares SET keyHash=?, sealed=?, epoch=epoch+1 WHERE id=?').run(hash(key), store.sealShare(id, key), id);
   };
   app.get('/api/manage/shares', async () => ({ shares: (store.db.prepare('SELECT * FROM screen_shares ORDER BY createdAt DESC').all() as ShareRow[]).map(describe) }));
   app.post('/api/manage/shares', async (req, reply) => {
-    const parsed = z.object({ name: z.string().trim().min(1).max(64) }).safeParse(req.body);
+    const parsed = z.object({ name: z.string().trim().min(1).max(64), expiresAt: expirySchema.optional() }).safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: '请填写共享名称（1–64 字符）' });
+    if (parsed.data.expiresAt != null && parsed.data.expiresAt <= Date.now()) return reply.code(400).send({ error: '到期时间必须晚于当前时间' });
     const count = store.db.prepare('SELECT COUNT(*) AS count FROM screen_shares').get() as { count: number };
     if (count.count >= 50) return reply.code(409).send({ error: '最多保留 50 个共享，请先删除不用的共享' });
     const id = randomUUID(), key = randomBytes(32).toString('base64url');
-    store.db.prepare('INSERT INTO screen_shares VALUES(?,?,?,?,1,1,?)').run(id, parsed.data.name, hash(key), store.sealShare(id, key), Date.now());
+    store.db.prepare('INSERT INTO screen_shares (id,name,keyHash,sealed,enabled,epoch,createdAt,expiresAt) VALUES(?,?,?,?,1,1,?,?)').run(id, parsed.data.name, hash(key), store.sealShare(id, key), Date.now(), parsed.data.expiresAt ?? null);
     store.audit(req.principal!.name, 'share.create', id);
     return reply.code(201).send({ share: describe(row(id)!) });
+  });
+  app.post<{ Params: { id: string } }>('/api/manage/shares/:id/expiry', async (req, reply) => {
+    const share = row(req.params.id); if (!share) return reply.code(404).send({ error: '共享不存在' });
+    const parsed = z.object({ expiresAt: expirySchema }).safeParse(req.body);
+    if (!parsed.success || (parsed.data.expiresAt !== null && parsed.data.expiresAt <= Date.now())) return reply.code(400).send({ error: '请选择未来的到期时间，或设为不限时' });
+    if (expired(share)) {
+      rotate(share.id);
+      store.db.prepare('UPDATE screen_shares SET enabled=0 WHERE id=?').run(share.id);
+      revoke(share.id, '共享授权码已到期，请向共享者索取新链接', true);
+    }
+    store.db.prepare('UPDATE screen_shares SET expiresAt=? WHERE id=?').run(parsed.data.expiresAt, share.id);
+    store.audit(req.principal!.name, 'share.expiry', share.id);
+    return { share: describe(row(share.id)!) };
   });
   app.post<{ Params: { id: string } }>('/api/manage/shares/:id/rotate', async (req, reply) => {
     const share = row(req.params.id); if (!share) return reply.code(404).send({ error: '共享不存在' });
@@ -80,6 +97,7 @@ export function registerShares(app: FastifyInstance, store: Store, origins: stri
   });
   app.post<{ Params: { id: string } }>('/api/manage/shares/:id/enable', async (req, reply) => {
     const share = row(req.params.id); if (!share) return reply.code(404).send({ error: '共享不存在' });
+    if (expired(share)) return reply.code(400).send({ error: '共享授权码已到期，请先修改有效期' });
     if (!share.enabled) {
       rotate(share.id); store.db.prepare('UPDATE screen_shares SET enabled=1 WHERE id=?').run(share.id);
       store.audit(req.principal!.name, 'share.enable', share.id);
@@ -95,7 +113,7 @@ export function registerShares(app: FastifyInstance, store: Store, origins: stri
   app.post<{ Params: { id: string } }>('/api/public/shares/:id/join', { config: { rateLimit: { max: 12, timeWindow: '1 minute' } } }, async (req, reply) => {
     const parsed = z.object({ key: keySchema }).safeParse(req.body);
     const share = row(req.params.id);
-    if (!parsed.success || !share || !share.enabled || !timingSafeEqual(Buffer.from(hash(parsed.data.key)), Buffer.from(share.keyHash))) return reply.code(403).send({ error: '共享链接或密钥无效，可能已更换、停止或删除，请向共享者索取新链接' });
+    if (!parsed.success || !share || !share.enabled || expired(share) || !timingSafeEqual(Buffer.from(hash(parsed.data.key)), Buffer.from(share.keyHash))) return reply.code(403).send({ error: '共享链接或密钥无效，可能已更换、停止或删除，请向共享者索取新链接' });
     if (!publishers.has(share.id)) return reply.code(409).send({ error: '共享者尚未开始共享，或已关闭共享页面，请稍后重试' });
     for (const [ticket, grant] of tickets) if (grant.expiresAt <= Date.now()) tickets.delete(ticket);
     const count = [...viewers.values()].filter(v => v.shareId === share.id).length + [...tickets.values()].filter(t => t.shareId === share.id).length;
@@ -125,12 +143,12 @@ export function registerShares(app: FastifyInstance, store: Store, origins: stri
         const auth = parsed.data;
         if (auth.role === 'publisher') {
           const principal = store.session(cookieValue(req.headers.cookie)), share = row(auth.shareId);
-          if (!principal || !share?.enabled || publishers.has(share.id)) { ws.close(1008, 'Sharing unavailable'); return; }
+          if (!principal || !share?.enabled || expired(share) || publishers.has(share.id)) { ws.close(1008, 'Sharing unavailable'); return; }
           publisherId = share.id; publishers.set(share.id, { ws, principal }); send(ws, { type: 'ready' });
         } else {
           const grant = tickets.get(hash(auth.ticket)); tickets.delete(hash(auth.ticket));
           const share = grant && row(grant.shareId), publisher = grant && publishers.get(grant.shareId);
-          if (!grant || grant.expiresAt <= Date.now() || !share?.enabled || share.epoch !== grant.epoch || !publisher || !store.valid(publisher.principal)) { ws.close(1008, 'Sharing unavailable'); return; }
+          if (!grant || grant.expiresAt <= Date.now() || !share?.enabled || expired(share) || share.epoch !== grant.epoch || !publisher || !store.valid(publisher.principal)) { ws.close(1008, 'Sharing unavailable'); return; }
           viewerId = randomUUID();
           const session = { id: viewerId, hostId: share.id, quality: 'balanced', expiresAt: Date.now() + 4 * 3600000 };
           viewers.set(viewerId, { id: viewerId, shareId: share.id, epoch: grant.epoch, ws, expiresAt: Date.now() + 30000, ready: false });
@@ -151,7 +169,7 @@ export function registerShares(app: FastifyInstance, store: Store, origins: stri
       const signal = parsed.data, viewer = viewers.get(signal.sessionId);
       if (!viewer || (publisherId ? viewer.shareId !== publisherId : viewer.id !== viewerId)) { ws.close(1008, 'Wrong session'); return; }
       const share = row(viewer.shareId);
-      if (!share?.enabled || share.epoch !== viewer.epoch) { finish(viewer.id, '共享链接已失效'); return; }
+      if (!share?.enabled || expired(share) || share.epoch !== viewer.epoch) { finish(viewer.id, '共享链接已失效'); return; }
       if (signal.type === 'end') { finish(viewer.id, '观看已结束'); return; }
       if (!viewer.ready || (signal.type === 'offer' && !viewerId) || (signal.type === 'answer' && !publisherId) || (signal.type === 'offer' && /^m=application\s/m.test(signal.sdp))) { ws.close(1008, 'Read-only sharing'); return; }
       send(publisherId ? viewer.ws : publishers.get(viewer.shareId)?.ws, signal);
@@ -163,6 +181,11 @@ export function registerShares(app: FastifyInstance, store: Store, origins: stri
     });
   });
   const reap = setInterval(() => {
+    const due = store.db.prepare('SELECT * FROM screen_shares WHERE enabled=1 AND expiresAt IS NOT NULL AND expiresAt<=?').all(Date.now()) as ShareRow[];
+    for (const share of due) {
+      store.db.prepare('UPDATE screen_shares SET enabled=0, epoch=epoch+1 WHERE id=?').run(share.id);
+      revoke(share.id, '共享授权码已到期，请向共享者索取新链接', true);
+    }
     for (const [ticket, grant] of tickets) if (grant.expiresAt <= Date.now()) tickets.delete(ticket);
     for (const [id, publisher] of publishers) if (!store.valid(publisher.principal)) revoke(id, '共享者登录已失效', true);
     for (const viewer of [...viewers.values()]) if (viewer.expiresAt <= Date.now()) finish(viewer.id, '观看会话已到期，请重新打开链接');
