@@ -267,3 +267,61 @@ test('mobile keyboard sends chords in order, restores tools after fullscreen fal
   await screen.unmount()
   enabled.mockRestore()
 }, 30000)
+
+test('landscape keyboard respects panel width and iPhone safe areas', async () => {
+  await page.viewport(844, 390)
+  const safe = document.createElement('style')
+  safe.textContent =
+    ':root { --safe-left:59px; --safe-right:59px; --safe-bottom:21px; }'
+  document.head.append(safe)
+  const screen = await render(
+    <Viewer
+      host={{
+        id: 'layout',
+        name: '本机 Linux 桌面',
+        busy: false,
+        kind: 'linux-x11',
+        capabilities: { video: true, systemInput: true },
+      }}
+      session={{
+        id: 'layout',
+        hostId: 'layout',
+        quality: 'smooth',
+        expiresAt: Date.now() + 60000,
+      }}
+      iceServers={[]}
+      token=''
+      onExit={() => {}}
+    />
+  )
+  try {
+    await screen.getByRole('button', { name: '键盘', exact: true }).click()
+    await page.screenshot({ path: './__screenshots__/keyboard-side-panel.png' })
+    const panel = document.querySelector('.remote-panel') as HTMLElement
+    const stage = document
+      .querySelector('.remote-stage')!
+      .getBoundingClientRect()
+    expect(stage.right).toBeLessThanOrEqual(panel.getBoundingClientRect().left)
+    expect(panel.scrollWidth).toBeLessThanOrEqual(panel.clientWidth)
+    for (const button of panel.querySelectorAll('button')) {
+      expect(button.scrollWidth, button.textContent ?? '').toBeLessThanOrEqual(
+        button.clientWidth
+      )
+    }
+    await screen
+      .getByRole('button', { name: '终端复制 Ctrl + Shift + C', exact: true })
+      .click()
+    expect(sendInput).toHaveBeenCalledWith({
+      type: 'key',
+      code: 'KeyC',
+      down: true,
+    })
+    for (const tab of ['完整按键', '文字输入', '常用组合']) {
+      await screen.getByRole('tab', { name: tab, exact: true }).click()
+      expect(panel.scrollWidth).toBeLessThanOrEqual(panel.clientWidth)
+    }
+  } finally {
+    await screen.unmount()
+    safe.remove()
+  }
+}, 30000)

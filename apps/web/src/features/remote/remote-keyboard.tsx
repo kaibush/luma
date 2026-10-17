@@ -81,7 +81,7 @@ export function RemoteKeyboard({
     ))
   return (
     <section
-      className='remote-panel border-t bg-background'
+      className='remote-panel remote-keyboard border-t bg-background'
       aria-label='远程键盘'
     >
       <Tabs defaultValue='shortcuts' className='gap-2'>
@@ -101,7 +101,7 @@ export function RemoteKeyboard({
           </Button>
         </div>
         <TabsContent value='shortcuts' className='flex flex-col gap-2'>
-          <div className='grid grid-cols-4 gap-1 sm:grid-cols-8'>
+          <div className='remote-shortcuts'>
             {shortcuts.map(([label, hint, codes]) => (
               <Button
                 key={label}
@@ -152,15 +152,15 @@ export function RemoteKeyboard({
             </div>
           ))}
           <div className='grid grid-cols-8 gap-1'>{keys(common)}</div>
-          <div className='grid grid-cols-4 gap-1 sm:grid-cols-8'>
+          <div className='grid grid-cols-4 gap-1 @min-[640px]:grid-cols-8'>
             {keys([['Space', '空格'], ['CapsLock', 'Caps'], ...navigation])}
           </div>
-          <div className='grid grid-cols-6 gap-1 sm:grid-cols-12'>
+          <div className='grid grid-cols-6 gap-1 @min-[640px]:grid-cols-12'>
             {keys(
               Array.from({ length: 12 }, (_, i) => [`F${i + 1}`, `F${i + 1}`])
             )}
           </div>
-          <div className='grid grid-cols-6 gap-1 sm:grid-cols-12'>
+          <div className='grid grid-cols-6 gap-1 @min-[640px]:grid-cols-12'>
             {keys([
               ['Backquote', '`'],
               ['Minus', '-'],

@@ -12,7 +12,8 @@
     --safe-left: env(safe-area-inset-left, 0px);
   }
   #root {
-    padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+    padding: var(--safe-top) var(--safe-right) var(--safe-bottom)
+      var(--safe-left);
   }
 
   * {
@@ -205,4 +206,21 @@
 [data-sidebar='sidebar'][data-mobile='true'] {
   padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
 }
-.header-fixed { top: var(--safe-top); }
+.header-fixed {
+  top: var(--safe-top);
+}
+
+/* The keyboard responds to its own width, including when docked beside video. */
+.remote-keyboard {
+  container-type: inline-size;
+  min-width: 0;
+}
+.remote-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+  gap: 4px;
+}
+.remote-shortcuts > button {
+  min-width: 0;
+  white-space: normal;
+}
