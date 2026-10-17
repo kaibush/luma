@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Field, FieldLabel } from '@/components/ui/field'
 import { PasswordInput } from '@/components/password-input'
 import { sendSignal } from '@/features/remote/api'
+import { enterDisplayMode } from '@/features/remote/display-mode'
 import { RemotePeer, type Telemetry } from '@/features/remote/peer'
 import { RemoteKeyboard } from '@/features/remote/remote-keyboard'
 import { shareSocket } from './connection'
@@ -21,10 +22,12 @@ export function ShareViewer({ id }: { id: string }) {
     [stats, setStats] = useState<Telemetry>({})
   const [canControl, setCanControl] = useState(false)
   const [keyboard, setKeyboard] = useState(false)
+  const [immersive, setImmersive] = useState(false)
+  const [displayHint, setDisplayHint] = useState('')
+  const surface = useRef<HTMLElement>(null)
   const [asciiOnly, setAsciiOnly] = useState(true)
   const pointer = useRef<{ id: number; button: 'left' | 'right' } | null>(null)
-  const video = useRef<HTMLVideoElement>(null),
-    container = useRef<HTMLDivElement>(null)
+  const video = useRef<HTMLVideoElement>(null)
   const resource = useRef<{
     generation: number
     ws?: WebSocket
@@ -187,6 +190,53 @@ export function ShareViewer({ id }: { id: string }) {
       document.removeEventListener('visibilitychange', release)
     }
   }, [])
+  const exitDisplay = () => {
+    release()
+    setImmersive(false)
+    setDisplayHint('')
+    setKeyboard(false)
+    if (document.fullscreenElement === surface.current)
+      void document.exitFullscreen().catch(() => {})
+  }
+  const enterDisplay = async () => {
+    if (!surface.current) return
+    release()
+    setKeyboard(false)
+    const generation = resource.current.generation
+    const mode = await enterDisplayMode(surface.current)
+    if (generation !== resource.current.generation) {
+      if (document.fullscreenElement === surface.current)
+        void document.exitFullscreen().catch(() => {})
+      return
+    }
+    setImmersive(true)
+    setDisplayHint(
+      mode === 'immersive'
+        ? '已进入沉浸模式，可手动横屏；浏览器地址栏由系统管理。'
+        : ''
+    )
+  }
+  useEffect(() => {
+    if (!connected) exitDisplay()
+  }, [connected]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!immersive) return
+    const overflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const changed = () => {
+      if (!document.fullscreenElement) exitDisplay()
+    }
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') exitDisplay()
+    }
+    document.addEventListener('fullscreenchange', changed)
+    window.addEventListener('keydown', escape)
+    return () => {
+      document.body.style.overflow = overflow
+      document.removeEventListener('fullscreenchange', changed)
+      window.removeEventListener('keydown', escape)
+    }
+  }, [immersive]) // eslint-disable-line react-hooks/exhaustive-deps
   const point = (x: number, y: number) => {
     const v = video.current
     return (
@@ -195,8 +245,23 @@ export function ShareViewer({ id }: { id: string }) {
     )
   }
   return (
-    <main className='mx-auto flex max-w-6xl flex-col gap-4 p-4'>
-      <div className='flex flex-wrap items-center justify-between gap-3'>
+    <main
+      ref={surface}
+      data-display-mode={immersive ? 'immersive' : 'normal'}
+      className={
+        immersive
+          ? 'fixed inset-0 z-50 flex h-dvh w-full flex-col overflow-hidden bg-background text-foreground'
+          : 'mx-auto flex max-w-6xl flex-col gap-4 p-4'
+      }
+    >
+      <div
+        hidden={immersive}
+        className={
+          immersive
+            ? 'hidden'
+            : 'flex flex-wrap items-center justify-between gap-3'
+        }
+      >
         <h1 className='text-xl font-semibold'>{name}</h1>
         <span className='text-sm' role='status'>
           {status}
@@ -233,8 +298,11 @@ export function ShareViewer({ id }: { id: string }) {
         </Alert>
       )}
       <div
-        ref={container}
-        className='relative overflow-hidden rounded-xl bg-muted'
+        className={
+          immersive
+            ? 'relative min-h-0 flex-1 overflow-hidden bg-black'
+            : 'relative overflow-hidden rounded-xl bg-muted'
+        }
       >
         <video
           ref={video}
@@ -308,7 +376,11 @@ export function ShareViewer({ id }: { id: string }) {
               send({ type: 'key', code: e.code, down: false })
             }
           }}
-          className='aspect-video w-full object-contain'
+          className={
+            immersive
+              ? 'h-full w-full object-contain'
+              : 'aspect-video w-full object-contain'
+          }
         />
         {connected && (
           <div className='pointer-events-none absolute start-2 top-2 rounded-lg bg-foreground/90 px-3 py-2 text-sm font-semibold text-background tabular-nums'>
@@ -318,7 +390,13 @@ export function ShareViewer({ id }: { id: string }) {
         )}
       </div>
       {connected && (
-        <div className='flex flex-wrap gap-2'>
+        <div
+          className={
+            immersive
+              ? 'flex shrink-0 flex-wrap justify-center gap-2 bg-background p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]'
+              : 'flex flex-wrap gap-2'
+          }
+        >
           {canControl && (
             <Button variant='outline' onClick={() => setKeyboard(!keyboard)}>
               键盘
@@ -337,28 +415,41 @@ export function ShareViewer({ id }: { id: string }) {
           <Button
             variant='outline'
             onClick={() => {
-              void container.current
-                ?.requestFullscreen?.()
-                .catch(() =>
-                  setError('当前浏览器不支持页面全屏，可使用视频自带的全屏按钮')
-                )
+              if (immersive) exitDisplay()
+              else void enterDisplay()
             }}
           >
-            全屏观看
+            {immersive ? '退出全屏' : '全屏观看'}
           </Button>
         </div>
       )}
-      {connected && canControl && keyboard && (
-        <RemoteKeyboard
-          send={send}
-          asciiOnly={asciiOnly}
-          onClose={() => {
-            release()
-            setKeyboard(false)
-          }}
-        />
+      {displayHint && (
+        <p
+          role='status'
+          className='pointer-events-none absolute inset-x-4 top-14 rounded-lg bg-background/90 p-2 text-center text-xs'
+        >
+          {displayHint}
+        </p>
       )}
-      <p className='text-sm text-muted-foreground'>
+      {connected && canControl && keyboard && (
+        <div
+          className={
+            immersive
+              ? 'absolute inset-x-0 bottom-16 max-h-[65dvh] overflow-auto bg-background'
+              : ''
+          }
+        >
+          <RemoteKeyboard
+            send={send}
+            asciiOnly={asciiOnly}
+            onClose={() => {
+              release()
+              setKeyboard(false)
+            }}
+          />
+        </div>
+      )}
+      <p className={immersive ? 'hidden' : 'text-sm text-muted-foreground'}>
         无需登录 · {canControl ? '允许控制远程桌面' : '仅观看画面'} ·
         共享者可随时停止或更换分享码
       </p>
