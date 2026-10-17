@@ -12,6 +12,7 @@ import {
   Keyboard,
   MousePointer2,
   RotateCw,
+  Hand,
 } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -20,6 +21,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { api, sendSignal, signaling } from './api'
 import { RemotePeer, type Telemetry } from './peer'
+import { moveTouch, isTap, type TouchGesture } from './touchpad'
 
 export function Viewer({
   host,
@@ -42,6 +44,8 @@ export function Viewer({
     [error, setError] = useState('')
   const [keyboard, setKeyboard] = useState(false),
     [text, setText] = useState('')
+  const [touchpad, setTouchpad] = useState(false)
+  const gesture = useRef<TouchGesture | null>(null)
   const activePointer = useRef<number | null>(null),
     lastPoint = useRef({ x: 0.5, y: 0.5 }),
     pendingMove = useRef<InputEvent | null>(null),
@@ -110,6 +114,10 @@ export function Viewer({
       const release = () => {
         connection.sendInput({ type: 'release-all' })
         activePointer.current = null
+        gesture.current = null
+        cancelAnimationFrame(raf.current)
+        raf.current = 0
+        pendingMove.current = null
       }
       const key = (e: KeyboardEvent) => {
         if (
@@ -173,6 +181,41 @@ export function Viewer({
       )
     )
   }
+  const releasePointer = () => {
+    send({ type: 'release-all' })
+    activePointer.current = null
+    gesture.current = null
+    cancelAnimationFrame(raf.current)
+    raf.current = 0
+    pendingMove.current = null
+  }
+  const queueMove = () => {
+    pendingMove.current = { type: 'move', ...lastPoint.current }
+    if (!raf.current)
+      raf.current = requestAnimationFrame(() => {
+        raf.current = 0
+        if (pendingMove.current) send(pendingMove.current)
+        pendingMove.current = null
+      })
+  }
+  const moveFinger = (e: { clientX: number; clientY: number }) => {
+    const v = video.current,
+      g = gesture.current
+    if (!v || !g || !v.videoWidth || !v.videoHeight) return
+    const rect = v.getBoundingClientRect()
+    const scale = Math.min(
+      rect.width / v.videoWidth,
+      rect.height / v.videoHeight
+    )
+    lastPoint.current = moveTouch(
+      g,
+      { x: e.clientX, y: e.clientY },
+      lastPoint.current,
+      v.videoWidth * scale,
+      v.videoHeight * scale
+    )
+    if (g.moved) queueMove()
+  }
   const fullscreen = async () => {
     try {
       if (!document.fullscreenElement)
@@ -230,7 +273,11 @@ export function Viewer({
           playsInline
           muted
           tabIndex={0}
-          aria-label='远程桌面，触摸可发送测试输入'
+          aria-label={
+            touchpad
+              ? '远程桌面，滑动移动鼠标，轻点单击'
+              : '远程桌面，直接触摸控制'
+          }
           className='size-full touch-none object-contain outline-none'
           onClick={() => {
             void video.current
@@ -238,8 +285,27 @@ export function Viewer({
               .then(() => setError(''))
               .catch(() => {})
           }}
-          onBlur={() => send({ type: 'release-all' })}
+          onBlur={releasePointer}
           onPointerDown={(e) => {
+            if (touchpad && e.pointerType === 'touch') {
+              e.preventDefault()
+              if (activePointer.current !== null) {
+                releasePointer()
+                return
+              }
+              e.currentTarget.focus()
+              e.currentTarget.setPointerCapture(e.pointerId)
+              activePointer.current = e.pointerId
+              const finger = { x: e.clientX, y: e.clientY }
+              gesture.current = {
+                id: e.pointerId,
+                start: finger,
+                previous: finger,
+                startedAt: performance.now(),
+                moved: false,
+              }
+              return
+            }
             if (![0, 2].includes(e.button) || activePointer.current !== null)
               return
             const p = point(e)
@@ -257,6 +323,13 @@ export function Viewer({
             })
           }}
           onPointerMove={(e) => {
+            if (touchpad && e.pointerType === 'touch') {
+              if (gesture.current?.id === e.pointerId) {
+                e.preventDefault()
+                moveFinger(e)
+              }
+              return
+            }
             if (
               activePointer.current !== null &&
               activePointer.current !== e.pointerId
@@ -265,15 +338,31 @@ export function Viewer({
             const p = point(e)
             if (!p) return
             lastPoint.current = p
-            pendingMove.current = { type: 'move', ...p }
-            if (!raf.current)
-              raf.current = requestAnimationFrame(() => {
-                raf.current = 0
-                if (pendingMove.current) send(pendingMove.current)
-                pendingMove.current = null
-              })
+            queueMove()
           }}
           onPointerUp={(e) => {
+            if (touchpad && e.pointerType === 'touch') {
+              if (gesture.current?.id !== e.pointerId) return
+              e.preventDefault()
+              moveFinger(e)
+              if (isTap(gesture.current, performance.now())) {
+                send({
+                  type: 'button',
+                  button: 'left',
+                  down: true,
+                  ...lastPoint.current,
+                })
+                send({
+                  type: 'button',
+                  button: 'left',
+                  down: false,
+                  ...lastPoint.current,
+                })
+              }
+              gesture.current = null
+              activePointer.current = null
+              return
+            }
             if (activePointer.current !== e.pointerId) return
             send({
               type: 'button',
@@ -283,13 +372,9 @@ export function Viewer({
             })
             activePointer.current = null
           }}
-          onPointerCancel={() => {
-            send({ type: 'release-all' })
-            activePointer.current = null
-          }}
+          onPointerCancel={releasePointer}
           onLostPointerCapture={() => {
-            send({ type: 'release-all' })
-            activePointer.current = null
+            if (activePointer.current !== null) releasePointer()
           }}
           onWheel={(e) => {
             const unit =
@@ -347,7 +432,20 @@ export function Viewer({
         </form>
       )}
       <footer className='flex flex-wrap items-center justify-between gap-2 border-t p-2'>
-        <div className='flex items-center gap-1'>
+        <div className='flex flex-wrap items-center gap-1'>
+          <Button
+            variant={touchpad ? 'default' : 'outline'}
+            size='sm'
+            aria-label='触控板模式'
+            aria-pressed={touchpad}
+            onClick={() => {
+              releasePointer()
+              setTouchpad(!touchpad)
+            }}
+          >
+            <Hand data-icon='inline-start' />
+            {touchpad ? '触控板' : '直接触控'}
+          </Button>
           <Button
             variant='outline'
             size='sm'
@@ -397,6 +495,7 @@ export function Viewer({
           </Button>
         </div>
         <span className='text-xs text-muted-foreground'>
+          {touchpad && <span>滑动移动 · 轻点单击 / 连点双击 · </span>}
           {stats.fps ?? '—'} FPS · {stats.mbps?.toFixed(1) ?? '—'} Mbps ·{' '}
           {stats.width ? `${stats.width}×${stats.height}` : '—'}{' '}
           <span className='hidden md:inline'>
