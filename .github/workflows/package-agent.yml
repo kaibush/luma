@@ -1,0 +1,86 @@
+name: Build desktop clients
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'apps/agent/**'
+      - 'packages/protocol/src/quality-profiles.json'
+      - 'docs/CLIENTS.md'
+      - 'scripts/package-agent.py'
+      - 'scripts/verify-agent-package.py'
+      - '.github/workflows/package-agent.yml'
+  push:
+    branches: [main]
+    tags: ['client-v*']
+    paths:
+      - 'apps/agent/**'
+      - 'packages/protocol/src/quality-profiles.json'
+      - 'docs/CLIENTS.md'
+      - 'scripts/package-agent.py'
+      - 'scripts/verify-agent-package.py'
+      - '.github/workflows/package-agent.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check Python and Linux installer syntax
+        run: |
+          python -m compileall -q apps/agent scripts/package-agent.py scripts/verify-agent-package.py
+          bash -n apps/agent/install/install-linux.sh
+      - name: Build archives from this commit
+        run: python scripts/package-agent.py --output-dir "$RUNNER_TEMP/client-packages"
+      - name: Verify archives and checksums
+        run: python scripts/verify-agent-package.py "$RUNNER_TEMP/client-packages"
+      - name: Upload downloads
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-clients-${{ github.sha }}
+          path: ${{ runner.temp }}/client-packages/
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/client-v')
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: client-release-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-clients-${{ github.sha }}
+          path: packages
+      - name: Publish tagged client release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CLIENT_TAG: ${{ github.ref_name }}
+        run: |
+          cat > release-notes.md <<'NOTES'
+          Linux X11 client and Windows preview client.
+
+          Download the archive for the controlled computer, extract it, and run the included installer. See client-guide.md for setup and removal instructions. First installation requires internet access to download Python dependencies.
+
+          Windows remains a preview: packaging checks do not replace Windows desktop validation. These archives contain source code and installers, not standalone signed executables. Verify downloads with SHA256SUMS.txt.
+          NOTES
+          if gh release view "$CLIENT_TAG" >/dev/null 2>&1; then
+            gh release upload "$CLIENT_TAG" packages/* --clobber
+          else
+            gh release create "$CLIENT_TAG" packages/* --verify-tag --title "$CLIENT_TAG" --notes-file release-notes.md --prerelease
+          fi

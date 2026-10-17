@@ -89,7 +89,7 @@ npm start
 
 运行 `npm run package:agent` 生成不含密钥的下载包，然后执行构建发布；`deploy/publish.sh` 已包含打包步骤。
 
-客户端压缩包已纳入 Git，存放在 `apps/web/public/downloads/`：
+客户端压缩包由脚本生成，不纳入 Git。本地默认输出目录是 `apps/web/public/downloads/`：
 
 - `remote-console-linux.tar.gz`：Linux 安装包。
 - `remote-console-windows.zip`：Windows 预览版安装包。
@@ -104,4 +104,22 @@ npm run package:agent
 
 打包脚本 `scripts/package-agent.py` 按明确的文件清单收集 `apps/agent/` 中的客户端源码、安装器和依赖版本，加入画质配置与安装文档，再生成 TAR.GZ / ZIP 和 SHA-256 校验值。这是源码加自动安装器的压缩包，不是编译后的独立可执行文件；不包含主机密钥、用户配置、虚拟环境或服务器数据库。
 
-修改客户端后重新运行打包命令，并将生成的 `apps/web/public/downloads/` 文件与源码一起提交。推送 GitHub 后，仓库中也会包含安装包。网页构建会把该目录复制到 `apps/web/dist/downloads/`，发布时再同步至服务器的 `/var/www/remote-console/downloads/`。
+只提交客户端源码、打包脚本和 workflow，安装包通过下方 GitHub Actions 自动生成。本地发布前运行打包命令，网页构建会把下载目录复制到 `apps/web/dist/downloads/`，发布时再同步至服务器的 `/var/www/remote-console/downloads/`。
+
+### GitHub 自动打包与发布
+
+已配置 `.github/workflows/package-agent.yml`（Actions 中名称为 **Build desktop clients**）：
+
+- 修改客户端源码、安装文档或打包脚本后，推送到 `main` 或提交 PR，会自动生成并校验两个安装包。
+- 也可以在 GitHub 的 **Actions → Build desktop clients → Run workflow** 手动运行。
+- 成功后在该次运行的 **Artifacts** 下载 `desktop-clients-<commit SHA>`，其中包含 Linux / Windows 包、校验值和安装说明；保留 30 天。
+- 推送 `client-v*` 标签会将同一批构建产物发布到 GitHub Releases。例如：
+
+  ```sh
+  git tag client-v0.1.0
+  git push origin client-v0.1.0
+  ```
+
+由于 Windows 仍为预览版，自动创建的 Release 标为 **Pre-release**。标签发布不需要额外设置密钥，使用 GitHub 自带的 `GITHUB_TOKEN`。同一标签重新运行时会更新对应的安装包附件。
+
+CI 使用 `python scripts/package-agent.py --output-dir <临时目录>` 从当前提交重新生成压缩包，不依赖仓库里已有的压缩包，也不会自动提交生成文件或部署控制台。生成的下载目录已加入 `.gitignore`；本地发布仍使用 `npm run package:agent` 更新网页下载目录。

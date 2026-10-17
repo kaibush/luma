@@ -1,4 +1,5 @@
 """Build public, credential-free desktop client archives."""
+import argparse
 import hashlib
 import shutil
 import tarfile
@@ -7,7 +8,10 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / 'apps/web/public/downloads'
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--output-dir', type=Path, default=ROOT / 'apps/web/public/downloads',
+                    help='Archive destination (defaults to website downloads)')
+OUT = parser.parse_args().output_dir.resolve()
 OUT.mkdir(parents=True, exist_ok=True)
 shutil.copy2(ROOT / 'docs/CLIENTS.md', OUT / 'client-guide.md')
 FILES = ['client.py', 'client_config.py', 'main.py', 'desktop.py', 'windows_input.py', 'requirements.lock']
