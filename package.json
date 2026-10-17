@@ -17,7 +17,8 @@
     "test:e2e": "node scripts/smoke.mjs",
     "test:native": "node scripts/native-smoke.mjs",
     "package:agent": "python3 scripts/package-agent.py",
-    "test:tools": "tsx scripts/tools-smoke.mjs"
+    "test:tools": "tsx scripts/tools-smoke.mjs",
+    "test:shares": "tsx scripts/shares-smoke.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

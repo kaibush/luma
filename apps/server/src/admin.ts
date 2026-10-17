@@ -29,6 +29,7 @@ export function registerAdmin(app: FastifyInstance, store: Store, options: {cont
       if (req.headers['x-remote-request'] !== '1' || (req.headers.origin && !options.origins.includes(req.headers.origin))) return reply.code(403).send({error: '请求来源无效，请刷新页面重试'});
     }
     if (path.startsWith('/api/auth/')) return;
+    if (/^\/api\/public\/shares\/[a-f0-9-]+\/join$/.test(path) && req.method === 'POST') return;
     if (!req.principal) return reply.code(401).send({error: '登录已失效或控制端 Token 无效'});
     if (path.startsWith('/api/manage/') && !admin(req, reply)) return;
   });

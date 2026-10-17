@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import { registerShares } from './shares.js';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import { createHmac, createHash, randomUUID } from 'node:crypto';
@@ -46,6 +47,7 @@ export async function createApp(config: Config) {
   registerAdmin(app, store, config, principal => {
     for (const [ws, auth] of principals) if (principal ? auth.kind === principal.kind && auth.id === principal.id : auth.kind === 'session') ws.close(1008, 'Authorization revoked');
   }, () => [...sessions.values()].map(s => ({ ...s.info, hostName: hosts.get(s.info.hostId)?.info.name || '离线主机', connected: !!s.controller })));
+  registerShares(app, store, config.origins, iceServers);
   app.get('/health', async () => ({ ok: true }));
   app.get('/api/hosts', async () => ({ hosts: [...hosts.values()].map(h => h.info) }));
   app.put<{ Params: { id: string } }>('/api/hosts/:id', async (req, reply) => {
@@ -76,6 +78,7 @@ export async function createApp(config: Config) {
   });
   app.delete<{ Params: { id: string } }>('/api/sessions/:id', async (req, reply) => { const s = sessions.get(req.params.id); if (s && (s.owner.id !== req.principal?.id || s.owner.kind !== req.principal?.kind)) return reply.code(403).send({ error: '非当前会话所有者' }); end(req.params.id, '会话已结束'); return reply.code(204).send(); });
   app.server.on('upgrade', (req, socket, head) => {
+    if (req.url === '/share-ws') return;
     if (req.url !== '/ws' || (req.headers.origin && !config.origins.includes(req.headers.origin)) || wss.clients.size >= 100) {
       socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); return;
     }

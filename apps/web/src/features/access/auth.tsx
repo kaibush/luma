@@ -113,7 +113,7 @@ export function AuthRoot({ children }: { children: ReactNode }) {
       </main>
     )
   let content = children
-  if (pathname !== '/host') {
+  if (pathname !== '/host' && !pathname.startsWith('/share/')) {
     if (!state.initialized && pathname !== '/setup')
       content = <Navigate to='/setup' replace />
     else if (state.initialized && !state.user && pathname !== '/login')

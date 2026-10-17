@@ -3,7 +3,8 @@ remote.example.com {
     handle /api/* {
         reverse_proxy 127.0.0.1:8787
     }
-    handle /ws {
+    @signaling path /ws /share-ws
+    handle @signaling {
         reverse_proxy 127.0.0.1:8787
     }
     handle {

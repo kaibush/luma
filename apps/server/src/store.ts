@@ -28,7 +28,7 @@ export class Store {
     else {
       if (!existsSync(keyPath)) {
         const columns = this.db.prepare('PRAGMA table_info(tokens)').all() as {name: string}[];
-        if (columns.some(c => c.name === 'sealed') && this.db.prepare('SELECT 1 FROM tokens WHERE sealed IS NOT NULL LIMIT 1').get()) {
+        if ((columns.some(c => c.name === 'sealed') && this.db.prepare('SELECT 1 FROM tokens WHERE sealed IS NOT NULL LIMIT 1').get()) || (this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='screen_shares'").get() && this.db.prepare('SELECT 1 FROM screen_shares LIMIT 1').get())) {
           this.db.close();
           throw new Error('Token encryption key missing; restore the .token-key file from backup');
         }
@@ -63,6 +63,12 @@ export class Store {
     cipher.setAAD(Buffer.from(id));
     const data = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
     return Buffer.concat([iv, cipher.getAuthTag(), data]).toString('base64');
+  }
+  sealShare(id: string, key: string) { return this.seal(`share:${id}`, key); }
+  unsealShare(id: string, sealed: string) {
+    const data = Buffer.from(sealed, 'base64'), decipher = createDecipheriv('aes-256-gcm', this.tokenKey, data.subarray(0, 12));
+    decipher.setAAD(Buffer.from(`share:${id}`)); decipher.setAuthTag(data.subarray(12, 28));
+    return Buffer.concat([decipher.update(data.subarray(28)), decipher.final()]).toString('utf8');
   }
   revealToken(id: string) {
     const row = this.db.prepare('SELECT sealed FROM tokens WHERE id=? AND revokedAt IS NULL AND (expiresAt IS NULL OR expiresAt>?)').get(id, Date.now()) as {sealed: string | null} | undefined;

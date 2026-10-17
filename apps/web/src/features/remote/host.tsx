@@ -12,7 +12,12 @@ import {
   CardContent,
   CardFooter,
 } from '@/components/ui/card'
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
+import {
+  Field,
+  FieldGroup,
+  FieldLabel,
+  FieldDescription,
+} from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { signaling, sendSignal } from './api'
 import { RemotePeer } from './peer'
@@ -29,6 +34,7 @@ export function BrowserHost() {
     ws?: WebSocket
     peer?: RemotePeer
     generation: number
+    registrationTimer?: ReturnType<typeof setTimeout>
   }>({ generation: 0 })
   const preview = useRef<HTMLVideoElement>(null),
     latest = useRef<InputEvent | null>(null),
@@ -36,12 +42,14 @@ export function BrowserHost() {
   const stop = () => {
     const r = resources.current
     r.generation++
+    clearTimeout(r.registrationTimer)
     r.peer?.close()
     r.ws?.close()
     r.stream?.getTracks().forEach((t) => t.stop())
     r.peer = undefined
     r.ws = undefined
     r.stream = undefined
+    if (preview.current) preview.current.srcObject = null
     setState('未共享')
     setBusy(false)
   }
@@ -56,19 +64,41 @@ export function BrowserHost() {
     return () => {
       clearInterval(timer)
       r.generation++
+      clearTimeout(r.registrationTimer)
       r.peer?.close()
       r.ws?.close()
       r.stream?.getTracks().forEach((t) => t.stop())
     }
   }, [])
   const start = async () => {
-    if (!window.isSecureContext || !navigator.mediaDevices?.getDisplayMedia) {
+    if (busy) return
+    setError('')
+    if (!window.isSecureContext) {
       setError(
-        '请在电脑的 HTTPS 或 localhost 页面打开，使用支持屏幕共享的浏览器'
+        '当前页面不是安全连接，请在电脑浏览器中打开 https://rc.lvyrix.com/host 后重试。'
       )
       return
     }
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      setError(
+        '当前浏览器不能共享屏幕。请在电脑上用 Chrome 或 Edge 打开本站；手机可用于观看，通常不能发起共享。'
+      )
+      return
+    }
+    if (!name.trim()) {
+      setError('请先填写共享名称，观看者将通过这个名称找到你的屏幕。')
+      document.getElementById('host-name')?.focus()
+      return
+    }
+    if (!token.trim()) {
+      setError(
+        '请先填写主机密钥：由管理员在「管理设置 → Token 管理」创建用途为「主机」的密钥。'
+      )
+      document.getElementById('host-token')?.focus()
+      return
+    }
     setBusy(true)
+    setState('等待选择屏幕，请在浏览器弹窗中选择后点击共享')
     setError('')
     const r = resources.current,
       generation = ++r.generation
@@ -90,10 +120,11 @@ export function BrowserHost() {
       stream.getVideoTracks()[0].onended = stop
       setState('正在注册')
       r.ws = signaling(
-        { role: 'host', token, name },
+        { role: 'host', token: token.trim(), name: name.trim() },
         (message) => {
           if (r.generation !== generation) return
           if (message.type === 'ready') {
+            clearTimeout(r.registrationTimer)
             setState('在线，等待连接')
             setToken('')
           } else if (message.type === 'session') {
@@ -151,19 +182,28 @@ export function BrowserHost() {
           } else if (message.type === 'error') setError(message.message)
           else void r.peer?.handle(message)
         },
-        () => {
+        (closeEvent) => {
           if (r.generation === generation) {
             stop()
-            setError('主机连接已断开。请检查主机密钥与网络，然后重新共享。')
+            setError(
+              closeEvent.code === 1008
+                ? '主机密钥无效、已过期或被撤销。请使用用途为「主机」的密钥，不能填写管理员密码或控制端密钥。'
+                : '主机连接已断开，请检查网络后重新选择屏幕共享。'
+            )
           }
         }
       )
+      r.registrationTimer = setTimeout(() => {
+        if (r.generation !== generation) return
+        stop()
+        setError('主机注册超时，请检查网络后重试。')
+      }, 15000)
     } catch (e) {
       if (r.generation === generation) {
         stop()
         setError(
           (e as Error).name === 'NotAllowedError'
-            ? '屏幕共享未获授权，你可以重新选择屏幕'
+            ? '已取消选择或未允许共享。请重新点击按钮，在浏览器弹窗中选择屏幕、窗口或标签页，再点击「共享」。'
             : (e as Error).message
         )
       }
@@ -186,6 +226,16 @@ export function BrowserHost() {
           在这台电脑安装客户端，即可通过控制台远程操作。
         </p>
       </div>
+      <Alert>
+        <Monitor />
+        <AlertTitle>把屏幕通过链接分享给别人</AlertTitle>
+        <AlertDescription>
+          在「屏幕共享」创建带密钥的观看链接，访客无需登录；你可随时更换密钥、停止或删除。
+          <Button asChild>
+            <a href='/shares'>打开屏幕共享</a>
+          </Button>
+        </AlertDescription>
+      </Alert>
       <div className='grid gap-4 md:grid-cols-2'>
         <Card>
           <CardHeader>
@@ -264,26 +314,36 @@ export function BrowserHost() {
       </Alert>
       <Alert>
         <Monitor />
-        <AlertTitle>浏览器共享端</AlertTitle>
+        <AlertTitle>浏览器主机接入：供控制台观看</AlertTitle>
         <AlertDescription>
-          在此电脑上授权屏幕共享。远端输入只显示在下方测试面板，不会操作系统鼠标和键盘。关闭共享即可结束访问。
+          <ol className='list-decimal ps-5'>
+            <li>在要共享屏幕的电脑上，用 Chrome 或 Edge 打开此页。</li>
+            <li>
+              填写共享名称和管理员提供的「主机密钥」，点击「选择屏幕并上线」，在浏览器弹窗中选择屏幕、窗口或标签页并确认共享。
+            </li>
+            <li>
+              显示「在线，等待连接」后，让有控制台访问权限的观看者打开本站首页、登录，在主机列表找到此名称，点击「连接桌面」。
+            </li>
+          </ol>
+          <p>
+            目前一次支持一位观看者，需要保持本页打开。停止共享或关闭本页即可结束；手机可以观看，但通常不能发起共享。
+          </p>
+          <p>
+            需要给访客发送观看链接，请使用上方「打开屏幕共享」。下方主机接入只供控制台登录用户观看，输入面板用于测试，不会操作本机系统鼠标键盘。
+          </p>
         </AlertDescription>
       </Alert>
-      {error && (
-        <Alert variant='destructive'>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
       <Card>
         <CardHeader>
-          <CardTitle>屏幕共享</CardTitle>
+          <CardTitle>浏览器主机接入</CardTitle>
           <CardDescription>
-            使用与控制端不同的主机密钥注册此设备。
+            不用安装客户端。先填下面两项，再选择要共享的内容。
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form
             id='host-form'
+            noValidate
             onSubmit={(e) => {
               e.preventDefault()
               void start()
@@ -291,7 +351,7 @@ export function BrowserHost() {
           >
             <FieldGroup>
               <Field data-disabled={busy}>
-                <FieldLabel htmlFor='host-name'>主机名称</FieldLabel>
+                <FieldLabel htmlFor='host-name'>共享名称</FieldLabel>
                 <Input
                   id='host-name'
                   value={name}
@@ -311,25 +371,36 @@ export function BrowserHost() {
                   disabled={busy}
                   required
                   onChange={(e) => setToken(e.target.value)}
-                  placeholder='HOST_TOKEN'
+                  placeholder='粘贴管理员提供的主机密钥'
+                  maxLength={256}
                 />
+                <FieldDescription>
+                  在「管理设置 → Token
+                  管理」创建用途为「主机」的密钥。此处不填写管理员密码。
+                </FieldDescription>
               </Field>
             </FieldGroup>
           </form>
         </CardContent>
-        <CardFooter className='gap-2'>
-          <Button
-            form='host-form'
-            disabled={busy || !token || !name}
-            type='submit'
-          >
-            <Radio data-icon='inline-start' />
-            选择屏幕并上线
-          </Button>
-          <Button variant='outline' disabled={!busy} onClick={stop}>
-            <Square data-icon='inline-start' />
-            停止共享
-          </Button>
+        <CardFooter className='flex flex-col items-start gap-3'>
+          <p role='status' className='text-sm font-medium'>
+            {state}
+          </p>
+          {error && (
+            <Alert variant='destructive' role='alert'>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          <div className='flex flex-wrap gap-2'>
+            <Button form='host-form' disabled={busy} type='submit'>
+              <Radio data-icon='inline-start' />
+              选择屏幕并上线
+            </Button>
+            <Button variant='outline' disabled={!busy} onClick={stop}>
+              <Square data-icon='inline-start' />
+              停止共享
+            </Button>
+          </div>
         </CardFooter>
       </Card>
       <Card>

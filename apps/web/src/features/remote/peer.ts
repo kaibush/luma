@@ -19,6 +19,7 @@ export interface Telemetry {
 }
 export interface PeerOptions {
   role: 'host' | 'controller'
+  readOnly?: boolean
   iceServers: IceServer[]
   quality: Quality
   mode?: 'desktop' | 'tools'
@@ -80,15 +81,17 @@ export class RemotePeer {
         this.pc.addTransceiver('video', { direction: 'recvonly' })
       if (options.audio)
         this.pc.addTransceiver('audio', { direction: 'recvonly' })
-      if (options.tools)
+      if (options.tools && !options.readOnly)
         this.bind(this.pc.createDataChannel('tools', { ordered: true }))
-      this.bind(this.pc.createDataChannel('input', { ordered: true }))
-      this.bind(
-        this.pc.createDataChannel('motion', {
-          ordered: false,
-          maxRetransmits: 0,
-        })
-      )
+      if (!options.readOnly) {
+        this.bind(this.pc.createDataChannel('input', { ordered: true }))
+        this.bind(
+          this.pc.createDataChannel('motion', {
+            ordered: false,
+            maxRetransmits: 0,
+          })
+        )
+      }
     } else if (options.stream) {
       for (const track of options.stream.getVideoTracks())
         this.pc.addTrack(track, options.stream)
@@ -109,6 +112,10 @@ export class RemotePeer {
     }, 1000)
   }
   private bind(channel: RTCDataChannel) {
+    if (this.options.readOnly) {
+      channel.close()
+      return
+    }
     if (channel.label === 'tools') {
       this.tools = new ToolClient(channel)
       channel.onopen = () => this.options.onTools?.(this.tools!)
@@ -141,6 +148,7 @@ export class RemotePeer {
     channel.onclose = () => this.options.onInput?.({ type: 'release-all' })
   }
   sendInput(event: InputEvent) {
+    if (this.options.readOnly) return false
     const channel = event.type === 'move' ? this.motion : this.reliable
     if (channel?.readyState !== 'open') return false
     if (channel.bufferedAmount > (event.type === 'move' ? 4096 : 64 * 1024)) {

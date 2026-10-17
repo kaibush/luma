@@ -1,0 +1,80 @@
+// Isolated publisher and anonymous viewers; synthetic video travels over real WebRTC.
+import { createRequire } from 'node:module'
+import { spawn } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
+import assert from 'node:assert/strict'
+import { createApp } from '../apps/server/src/server.ts'
+const require = createRequire(new URL('../apps/web/package.json', import.meta.url))
+const { chromium } = require('playwright')
+const port=19987, webPort=19988, base=`http://localhost:${webPort}`, controlToken=randomBytes(32).toString('hex')
+const app=await createApp({controlToken,hostToken:randomBytes(32).toString('hex'),origins:[base],logger:false})
+const requests=[];app.addHook('onRequest',async req=>{requests.push(req.url)})
+let vite,browser
+const wait=async(fn,timeout=60000)=>{const deadline=Date.now()+timeout;while(Date.now()<deadline){try{if(await fn())return}catch{}await new Promise(r=>setTimeout(r,200))}throw new Error('Verification timed out')}
+try{
+ await app.listen({host:'127.0.0.1',port})
+ vite=spawn('node',['node_modules/vite/bin/vite.js','apps/web','--config','apps/web/vite.config.ts','--host','127.0.0.1','--port',String(webPort)],{env:{...process.env,API_PORT:String(port)},stdio:['ignore','ignore','pipe']})
+ vite.stderr.on('data',d=>{if(process.env.SMOKE_VERBOSE)process.stderr.write(d)})
+ await wait(()=>fetch(base).then(r=>r.ok),120000)
+ browser=await chromium.launch({headless:true,args:['--no-sandbox']})
+ const owner=await browser.newContext(), guest=await browser.newContext({viewport:{width:390,height:844}})
+ const headers={'X-Remote-Request':'1'}
+ assert.equal((await owner.request.post(`${base}/api/auth/setup/unlock`,{headers,data:{key:controlToken}})).status(),200)
+ assert.equal((await owner.request.post(`${base}/api/auth/setup/complete`,{headers,data:{username:'admin',password:'isolated-share-test',settings:{workspaceName:'分享测试',defaultQuality:'balanced',sessionMinutes:15,stunUrl:'',turnUrl:''}}})).status(),200)
+ await owner.addInitScript(()=>{
+  navigator.mediaDevices.getDisplayMedia=async()=>{
+   const canvas=document.createElement('canvas');canvas.width=640;canvas.height=360
+   const ctx=canvas.getContext('2d');const draw=()=>{ctx.fillStyle='#164db5';ctx.fillRect(0,0,640,360);ctx.fillStyle='white';ctx.fillText('Shared video '+Date.now(),20,60)}
+   draw();const timer=setInterval(draw,100);const stream=canvas.captureStream(10)
+   window.__shareTracks=stream.getTracks();window.__shareTimer=timer
+   return stream
+  }
+ })
+ await guest.addInitScript(()=>{window.__dataChannels=0;const original=RTCPeerConnection.prototype.createDataChannel;RTCPeerConnection.prototype.createDataChannel=function(...args){window.__dataChannels++;return original.apply(this,args)}})
+ const publisher=await owner.newPage(), errors=[];publisher.on('pageerror',e=>errors.push(e.message));publisher.setDefaultTimeout(45000)
+ await publisher.goto(`${base}/shares`)
+ await publisher.getByLabel('共享名称',{exact:true}).fill('访客演示')
+ await publisher.getByRole('button',{name:'创建共享并生成密钥'}).click()
+ const linkInput=publisher.getByLabel('观看链接（包含密钥）',{exact:true})
+ const originalLink=await linkInput.inputValue()
+ await publisher.getByRole('button',{name:'选择屏幕并开始'}).click()
+ await publisher.getByText('屏幕共享已开启，复制观看链接发给对方，并保持本页打开。',{exact:true}).waitFor()
+ const viewer=await guest.newPage();viewer.on('pageerror',e=>errors.push(e.message));viewer.setDefaultTimeout(45000)
+ await viewer.goto(originalLink)
+ await viewer.getByText('正在观看 · 只读共享',{exact:true}).waitFor()
+ await viewer.waitForFunction(()=>document.querySelector('video')?.videoWidth===640)
+ const pixel=await viewer.locator('video').evaluate(video=>{const c=document.createElement('canvas');c.width=640;c.height=360;const x=c.getContext('2d');x.drawImage(video,0,0);return [...x.getImageData(300,200,1,1).data]})
+ assert.ok(pixel[2]>pixel[0]+80,'guest must receive publisher video')
+ assert.equal(await viewer.evaluate(()=>window.__dataChannels),0,'read-only viewer must not create input/tool channels')
+ assert.equal((await guest.request.get(`${base}/api/hosts`)).status(),401)
+ assert.equal((await guest.request.get(`${base}/api/manage/shares`)).status(),401)
+ assert.equal(await viewer.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true)
+ await viewer.screenshot({path:'/tmp/remote-console-share-guest.png',fullPage:true})
+ console.log('PASS: anonymous mobile viewer receives video without login or control channels')
+ await publisher.getByRole('button',{name:'更换密钥',exact:true}).click()
+ await viewer.getByText('共享密钥已更换，请向共享者索取新链接',{exact:true}).waitFor()
+ assert.equal(await viewer.locator('video').evaluate(v=>v.srcObject),null)
+ await wait(async()=>await linkInput.inputValue()!==originalLink)
+ const changedLink=await linkInput.inputValue()
+ await viewer.reload()
+ await viewer.getByText('共享链接或密钥无效，可能已更换、停止或删除，请向共享者索取新链接',{exact:true}).waitFor()
+ await viewer.goto(changedLink)
+ await viewer.getByText('正在观看 · 只读共享',{exact:true}).waitFor()
+ await publisher.getByRole('button',{name:'停止共享',exact:true}).click()
+ await viewer.getByText(/^(共享者已停止共享|共享者已离线)$/).waitFor()
+ await wait(()=>publisher.evaluate(()=>window.__shareTracks.every(t=>t.readyState==='ended')))
+ await publisher.getByRole('button',{name:'重新开启并选择屏幕'}).click()
+ await publisher.getByText('屏幕共享已开启，复制观看链接发给对方，并保持本页打开。',{exact:true}).waitFor()
+ const resumedLink=await linkInput.inputValue();assert.notEqual(resumedLink,changedLink)
+ await viewer.goto(resumedLink)
+ await viewer.getByText('正在观看 · 只读共享',{exact:true}).waitFor()
+ await publisher.getByRole('button',{name:'删除共享',exact:true}).click()
+ await viewer.getByText(/^(共享已删除|共享者已离线)$/).waitFor()
+ await publisher.getByText('还没有共享，先创建一个观看链接。',{exact:true}).waitFor()
+ const key=new URLSearchParams(new URL(originalLink).hash.slice(1)).get('key')
+ assert.ok(requests.every(url=>!url.includes(key)),'secret must not appear in HTTP URL logs')
+ assert.deepEqual(errors,[])
+ console.log('PASS: key rotation rejects old links and closes viewers; stop/resume rotates key; deletion closes viewers and removes entry')
+}finally{
+ await browser?.close();vite?.kill('SIGTERM');await app.close()
+}

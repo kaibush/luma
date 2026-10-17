@@ -21,7 +21,11 @@ export default defineConfig(({ mode }) => {
     ],
     server: {
       strictPort: true,
-      proxy: { '/api': apiTarget, '/ws': { target: apiTarget, ws: true } },
+      proxy: {
+        '/api': apiTarget,
+        '/ws': { target: apiTarget, ws: true },
+        '/share-ws': { target: apiTarget, ws: true },
+      },
     },
     resolve: {
       alias: {
@@ -34,7 +38,12 @@ export default defineConfig(({ mode }) => {
       browser: {
         enabled: true,
         provider: playwright(),
-        instances: [{ browser: process.env.TEST_BROWSER === 'webkit' ? 'webkit' : 'chromium' }],
+        instances: [
+          {
+            browser:
+              process.env.TEST_BROWSER === 'webkit' ? 'webkit' : 'chromium',
+          },
+        ],
       },
       coverage: {
         // include: ['src/**/*.{js,jsx,ts,tsx}'], // Uncomment to expand the report to all src/**/* so untested modules appear as 0% coverage.

@@ -7,14 +7,14 @@ rc.lvyrix.com {
 		respond 404
 	}
 
-	@api path /api /api/* /ws /health
+	@api path /api /api/* /ws /share-ws /health
 	handle @api {
 		reverse_proxy 127.0.0.1:8798
 	}
 
 	@assets path /assets/*
 	header @assets Cache-Control "public, max-age=31536000, immutable"
-	@shell not path /api /api/* /ws /health /assets/*
+	@shell not path /api /api/* /ws /share-ws /health /assets/*
 	header @shell Cache-Control "no-cache"
 	header {
 		X-Content-Type-Options nosniff
