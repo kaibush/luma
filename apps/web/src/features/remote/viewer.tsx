@@ -530,6 +530,20 @@ export function Viewer({
             })
           }}
         />
+        {state === 'connected' && (
+          <div
+            aria-label='实时连接统计，延迟为网络往返时间 RTT'
+            className='pointer-events-none absolute start-2 top-2 flex items-center gap-3 rounded-lg border border-background/20 bg-foreground/90 px-3 py-2 text-sm font-semibold text-background tabular-nums shadow-md select-none'
+          >
+            <span>
+              {stats.fps === undefined ? '—' : Math.round(stats.fps)} FPS
+            </span>
+            <span>
+              延迟 {stats.rttMs === undefined ? '—' : Math.round(stats.rttMs)}{' '}
+              ms
+            </span>
+          </div>
+        )}
         {state !== 'connected' && (
           <div className='pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-muted-foreground'>
             {recoveryHint || error || '正在建立安全视频连接…'}

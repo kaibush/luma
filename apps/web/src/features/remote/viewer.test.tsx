@@ -12,6 +12,13 @@ vi.mock('./api', () => ({
 }))
 vi.mock('./peer', () => ({
   RemotePeer: class {
+    constructor(options: {
+      onState: (state: string) => void
+      onStats: (stats: { fps: number; rttMs: number }) => void
+    }) {
+      options.onState('connected')
+      options.onStats({ fps: 59.6, rttMs: 23.4 })
+    }
     pc = { connectionState: 'connected' }
     sendInput = sendInput
     close() {}
@@ -81,6 +88,17 @@ test('touchpad swipes move without holding left, taps click cursor, direct mode 
     await new Promise((r) =>
       requestAnimationFrame(() => requestAnimationFrame(r))
     )
+    const hud = document.querySelector('[aria-label^="实时连接统计"]')!
+    expect(hud.textContent).toContain('60 FPS')
+    expect(hud.textContent).toContain('延迟 23 ms')
+    expect(getComputedStyle(hud).pointerEvents).toBe('none')
+    const hudRect = hud.getBoundingClientRect()
+    expect(
+      document.elementFromPoint(
+        hudRect.x + hudRect.width / 2,
+        hudRect.y + hudRect.height / 2
+      )
+    ).toBe(video)
     const viewer = document.querySelector('.remote-viewer')!
     expect(viewer.scrollWidth).toBeLessThanOrEqual(width)
     expect(
