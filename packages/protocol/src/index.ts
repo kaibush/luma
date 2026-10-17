@@ -1,12 +1,10 @@
 import { z } from 'zod';
 
-export const qualityProfiles = {
-  responsive: { label: '流畅', width: 1280, height: 720, fps: 60, maxBitrate: 4_000_000 },
-  balanced: { label: '均衡', width: 1920, height: 1080, fps: 30, maxBitrate: 5_000_000 },
-  sharp: { label: '清晰', width: 1920, height: 1080, fps: 60, maxBitrate: 10_000_000 },
-} as const;
+import profiles from './quality-profiles.json';
+
+export const qualityProfiles = profiles;
 export type Quality = keyof typeof qualityProfiles;
-export const qualitySchema = z.enum(['responsive', 'balanced', 'sharp']);
+export const qualitySchema = z.enum(['ultrafast', 'smooth', 'responsive', 'balanced', 'sharp']);
 export const authSchema = z.discriminatedUnion('role', [
   z.object({ type: z.literal('auth'), role: z.literal('host'), token: z.string().max(256), name: z.string().min(1).max(64), kind: z.enum(['browser', 'linux-x11']).default('browser') }),
   z.object({ type: z.literal('auth'), role: z.literal('controller'), token: z.string().max(256), sessionId: z.string().uuid() }),

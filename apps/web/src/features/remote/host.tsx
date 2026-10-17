@@ -100,12 +100,19 @@ export function BrowserHost() {
             r.peer?.close()
             setState('正在连接')
             const profile = qualityProfiles[message.session.quality]
+            stream.getVideoTracks()[0].contentHint = [
+              'ultrafast',
+              'smooth',
+              'responsive',
+            ].includes(message.session.quality)
+              ? 'motion'
+              : 'detail'
             // Constraint failure is nonfatal: sender bitrate/FPS caps still apply.
             void stream
               .getVideoTracks()[0]
               .applyConstraints({
-                width: { ideal: profile.width },
-                height: { ideal: profile.height },
+                width: { ideal: profile.width, max: profile.width },
+                height: { ideal: profile.height, max: profile.height },
                 frameRate: { ideal: profile.fps, max: profile.fps },
               })
               .catch(() => {})

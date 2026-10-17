@@ -31,7 +31,7 @@ import {
   EmptyDescription,
   EmptyMedia,
 } from '@/components/ui/empty'
-import { Field, FieldLabel } from '@/components/ui/field'
+import { Field, FieldLabel, FieldDescription } from '@/components/ui/field'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -176,6 +176,9 @@ export function RemoteDashboard() {
                 </option>
               ))}
             </select>
+            <FieldDescription>
+              流畅优先选 540p，仍卡顿选 360p。帧率为上限，切换后重新连接生效。
+            </FieldDescription>
           </Field>
           {loading && !hosts.length ? (
             <Skeleton className='h-48 w-full' />
@@ -212,7 +215,7 @@ export function RemoteDashboard() {
                   <CardContent>
                     <p className='text-sm text-muted-foreground'>
                       {host.capabilities.systemInput
-                        ? '支持系统鼠标、键盘与英文文本。当前主机使用软件编码，最高 30 FPS。'
+                        ? '支持系统鼠标、键盘与英文文本。软件编码，卡顿时建议选择 540p 或 360p。'
                         : '支持实时画面；此浏览器共享端仅用于输入测试。'}
                     </p>
                   </CardContent>

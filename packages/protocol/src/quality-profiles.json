@@ -1,0 +1,37 @@
+{
+  "ultrafast": {
+    "label": "极速流畅",
+    "width": 640,
+    "height": 360,
+    "fps": 60,
+    "maxBitrate": 900000
+  },
+  "smooth": {
+    "label": "优先流畅",
+    "width": 960,
+    "height": 540,
+    "fps": 60,
+    "maxBitrate": 1800000
+  },
+  "responsive": {
+    "label": "流畅",
+    "width": 1280,
+    "height": 720,
+    "fps": 60,
+    "maxBitrate": 4000000
+  },
+  "balanced": {
+    "label": "均衡",
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "maxBitrate": 5000000
+  },
+  "sharp": {
+    "label": "清晰",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "maxBitrate": 10000000
+  }
+}

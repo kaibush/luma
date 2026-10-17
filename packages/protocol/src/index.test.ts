@@ -17,3 +17,13 @@ test('input rejects out of range coordinates, unbounded scroll and oversized tex
   assert.equal(inputSchema.safeParse({ type: 'text', text: 'x'.repeat(2049) }).success, false)
   assert.equal(inputSchema.safeParse({ type: 'release-all' }).success, true)
 })
+
+test('every advertised quality is accepted and available to the native agent', async () => {
+  const { qualityProfiles, qualitySchema } = await import('./index.js')
+  for (const quality of Object.keys(qualityProfiles)) {
+    assert.equal(qualitySchema.parse(quality), quality)
+  }
+  assert.equal(qualitySchema.safeParse('unknown').success, false)
+  assert.ok(qualityProfiles.ultrafast.width < qualityProfiles.smooth.width)
+  assert.ok(qualityProfiles.smooth.width < qualityProfiles.responsive.width)
+})

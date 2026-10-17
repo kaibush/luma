@@ -9,7 +9,12 @@ import time
 import websockets
 from aiortc import RTCConfiguration, RTCIceServer, RTCPeerConnection, RTCSessionDescription
 from aiortc.sdp import candidate_from_sdp
+from aiortc.codecs import h264
 from desktop import DesktopInput, DesktopVideo
+
+# aiortc 1.14 defaults to a 1/30 encoder time base, which collapses 60 FPS
+# timestamps. Use 1/60 for all profiles, including 30 FPS sessions.
+h264.MAX_FRAME_RATE = 60
 
 logging.basicConfig(level=logging.WARNING, format='%(asctime)s %(levelname)s %(message)s')
 log = logging.getLogger('remote-agent')

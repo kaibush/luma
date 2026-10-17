@@ -1,55 +1,95 @@
 """X11 capture and input. Does not create or replace the user's desktop session."""
 import asyncio
+import json
 import math
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from fractions import Fraction
+from pathlib import Path
 
 import mss
 from av import VideoFrame
 from aiortc import VideoStreamTrack
+from aiortc.mediastreams import MediaStreamError
 from Xlib import X, XK, display
 from Xlib.ext import xtest
+
+
+# Shared with the UI and API so advertised capture limits stay in sync.
+PROFILES = json.loads((Path(__file__).resolve().parents[2] /
+                       'packages/protocol/src/quality-profiles.json').read_text())
 
 
 class DesktopVideo(VideoStreamTrack):
     def __init__(self, quality):
         super().__init__()
-        self.max_width = 1280 if quality == 'responsive' else 1920
-        # This server uses software encoding; keep the capture queue shallow.
-        self.fps = 30
+        profile = PROFILES[quality]
+        self.max_width = profile['width']
+        self.max_height = profile['height']
+        self.fps = profile['fps']
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='capture')
         self.screen = None
         self.started = time.monotonic()
         self.due = self.started
+        self.frames = asyncio.Queue(maxsize=1)
+        self.producer = None
 
     def capture(self):
         if self.screen is None:
             self.screen = mss.mss(display=os.environ.get('DISPLAY', ':10'), with_cursor=True)
         shot = self.screen.grab(self.screen.monitors[0])
         frame = VideoFrame(shot.width, shot.height, 'bgra')
-        data = shot.bgra
+        data = shot.raw
         stride = frame.planes[0].line_size
         if stride != shot.width * 4:
             data = b''.join(data[y*shot.width*4:(y+1)*shot.width*4] + bytes(stride-shot.width*4) for y in range(shot.height))
         frame.planes[0].update(data)
-        width = min(self.max_width, shot.width) // 2 * 2
-        height = max(2, round(shot.height * width / shot.width) // 2 * 2)
-        return frame.reformat(width=width, height=height, format='yuv420p')
+        scale = min(1, self.max_width / shot.width, self.max_height / shot.height)
+        width = max(2, int(shot.width * scale) // 2 * 2)
+        height = max(2, int(shot.height * scale) // 2 * 2)
+        return frame.reformat(width=width, height=height, format='yuv420p', interpolation='BILINEAR')
+
+    async def produce(self):
+        try:
+            while self.readyState == 'live':
+                await asyncio.sleep(max(0, self.due - time.monotonic()))
+                self.due = max(self.due + 1 / self.fps, time.monotonic())
+                frame = await asyncio.get_running_loop().run_in_executor(self.executor, self.capture)
+                frame.pts = round((time.monotonic() - self.started) * 90000)
+                frame.time_base = Fraction(1, 90000)
+                # Capture overlaps encoding. Slow consumers get the newest frame,
+                # never a growing backlog of stale desktop images.
+                if self.frames.full():
+                    self.frames.get_nowait()
+                self.frames.put_nowait(frame)
+        except asyncio.CancelledError:
+            pass
+        except Exception as error:
+            if self.frames.full():
+                self.frames.get_nowait()
+            self.frames.put_nowait(error)
 
     async def recv(self):
-        await asyncio.sleep(max(0, self.due - time.monotonic()))
-        self.due = max(self.due + 1 / self.fps, time.monotonic())
-        frame = await asyncio.get_running_loop().run_in_executor(self.executor, self.capture)
-        frame.pts = round((time.monotonic() - self.started) * 90000)
-        frame.time_base = Fraction(1, 90000)
+        if self.readyState != 'live':
+            raise MediaStreamError
+        if self.producer is None:
+            self.producer = asyncio.create_task(self.produce())
+        frame = await self.frames.get()
+        if isinstance(frame, Exception):
+            self.stop()
+            raise frame
         return frame
 
     def stop(self):
         if self.readyState == 'ended':
             return
         super().stop()
+        if self.producer:
+            self.producer.cancel()
+        if self.frames.full():
+            self.frames.get_nowait()
+        self.frames.put_nowait(MediaStreamError())
         self.executor.submit(lambda: self.screen.close() if self.screen else None)
         self.executor.shutdown(wait=False)
 

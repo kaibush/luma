@@ -2,7 +2,11 @@
 
 基于 **satnaing/shadcn-admin** 二次开发的前后端分离远控基础项目。面向手机横屏，采用 WebRTC 视频 + DataChannel 输入，不走 VNC/RFB 或 Guacamole 图片更新链路。
 
-**现在可以访问服务器上的真实 Linux 桌面。** 已部署 X11 主机端，直接采集现有 XFCE `:10` 桌面，通过 WebRTC 提供画面与系统鼠标、键盘控制；无需先打开浏览器共享页。当前服务器无可用硬件编码，主机端使用软件编码、最高 30 FPS。英文/数字文本输入已支持，中文文本提交暂不支持。
+**现在可以访问服务器上的真实 Linux 桌面。** 已部署 X11 主机端，直接采集现有 XFCE `:10` 桌面，通过 WebRTC 提供画面与系统鼠标、键盘控制；无需先打开浏览器共享页。当前服务器无可用硬件编码，主机端使用软件编码，支持 360p / 540p / 720p 最高 60 FPS、1080p 最高 30 或 60 FPS（实际受截图、编码与网络限制）。英文/数字文本输入已支持，中文文本提交暂不支持。
+
+流畅度优先时，在连接前选择「优先流畅 540p」或「极速流畅 360p」，重新连接生效。所有档位由 `packages/protocol/src/quality-profiles.json` 统一定义；采集和编码并行，只保留最新一帧。Linux Agent 的 H.264 编码时间基准设为 1/60，避免 60 FPS 时相邻帧时间戳合并。
+
+采集回归测试：`apps/agent/.venv/bin/python -m unittest discover -s apps/agent -p 'test_*.py'`。本机 WebRTC 接收帧率诊断：`DISPLAY=:10 XAUTHORITY=/root/.Xauthority apps/agent/.venv/bin/python apps/agent/benchmark.py`（读取现有桌面、不发送输入；不代表手机网络下的帧率）。
 
 已部署入口：**https://rc.lvyrix.com**；电脑共享端：https://rc.lvyrix.com/host 。生产密钥保存在服务器 `/etc/remote-console/environment`，部署维护见 [部署说明](docs/DEPLOYMENT.md)。
 
