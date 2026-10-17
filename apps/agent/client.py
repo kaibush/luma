@@ -72,7 +72,13 @@ class Client:
         for key, title in [('url', '控制台地址'), ('name', '主机名称'), ('token', '主机密钥（管理设置 → Token 管理 → 主机）')]:
             ttk.Label(body, text=title).pack(anchor='w', pady=(10, 3))
             value = tk.StringVar(value=initial[key]); self.fields[key] = value
-            ttk.Entry(body, textvariable=value, show='•' if key == 'token' else '').pack(fill='x')
+            entry = ttk.Entry(body, textvariable=value, show='•' if key == 'token' else '')
+            entry.pack(fill='x')
+            if key == 'token':
+                self.show_token = tk.BooleanVar(value=False)
+                self.token_entry = entry
+                ttk.Checkbutton(body, text='显示主机密钥', variable=self.show_token,
+                                command=lambda: self.token_entry.configure(show='' if self.show_token.get() else '•')).pack(anchor='w', pady=(4, 0))
         self.autostart = tk.BooleanVar(value=initial['autostart'])
         ttk.Checkbutton(body, text='登录本机桌面后自动连接', variable=self.autostart).pack(anchor='w', pady=12)
         self.permissions = {}

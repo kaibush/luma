@@ -17,6 +17,12 @@ test('encrypted token recovery, legacy records, tamper detection and missing key
     store.db.close()
     store = new Store(path, config)
     assert.equal(store.revealToken(token.id), token.value)
+    store.db.prepare('UPDATE tokens SET expiresAt=? WHERE id=?').run(Date.now() - 1000, token.id)
+    assert.equal(store.revealToken(token.id), token.value)
+    assert.equal(store.token(token.value, 'control'), null)
+    store.revoke(token.id)
+    assert.equal(store.revealToken(token.id), token.value)
+    assert.equal(store.token(token.value, 'control'), null)
     assert.equal(store.revealToken(legacy.id), null)
     const bootstrap = store.tokens().find(t => t.name === '原有控制端 Token')!
     assert.equal(store.revealToken(String(bootstrap.id)), config.controlToken)

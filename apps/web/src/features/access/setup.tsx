@@ -24,6 +24,7 @@ import {
   FieldDescription,
 } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { PasswordInput } from '@/components/password-input'
 import { request, useRemoteAuth, type ConnectionSettings } from './auth'
 import { SettingsFields } from './settings-fields'
 
@@ -143,9 +144,9 @@ export function SetupPage() {
               <FieldGroup>
                 <Field>
                   <FieldLabel htmlFor='setup-key'>部署密钥</FieldLabel>
-                  <Input
+                  <PasswordInput
                     id='setup-key'
-                    type='password'
+                    visibilityLabel='密钥'
                     autoComplete='off'
                     value={key}
                     required
@@ -186,9 +187,9 @@ export function SetupPage() {
                 </Field>
                 <Field>
                   <FieldLabel htmlFor='setup-password'>登录密码</FieldLabel>
-                  <Input
+                  <PasswordInput
                     id='setup-password'
-                    type='password'
+                    visibilityLabel='密码'
                     autoComplete='new-password'
                     value={password}
                     minLength={12}
@@ -202,9 +203,9 @@ export function SetupPage() {
                 </Field>
                 <Field>
                   <FieldLabel htmlFor='setup-confirm'>确认密码</FieldLabel>
-                  <Input
+                  <PasswordInput
                     id='setup-confirm'
-                    type='password'
+                    visibilityLabel='密码'
                     autoComplete='new-password'
                     value={confirm}
                     required

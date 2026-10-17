@@ -8,12 +8,14 @@ type PasswordInputProps = Omit<
   'type'
 > & {
   ref?: React.Ref<HTMLInputElement>
+  visibilityLabel?: string
 }
 
 export function PasswordInput({
   className,
   disabled,
   ref,
+  visibilityLabel,
   ...props
 }: PasswordInputProps) {
   const [showPassword, setShowPassword] = React.useState(false)
@@ -22,7 +24,7 @@ export function PasswordInput({
     <div className={cn('relative rounded-md', className)}>
       <input
         type={showPassword ? 'text' : 'password'}
-        className='flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50'
+        className='flex h-9 w-full rounded-md border border-input bg-transparent py-1 ps-3 pe-10 text-base shadow-xs transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50 md:text-sm'
         ref={ref}
         disabled={disabled}
         {...props}
@@ -33,11 +35,16 @@ export function PasswordInput({
         variant='ghost'
         disabled={disabled}
         className='absolute inset-e-1 top-1/2 h-6 w-6 -translate-y-1/2 rounded-md text-muted-foreground'
+        aria-pressed={showPassword}
         onClick={() => setShowPassword((prev) => !prev)}
       >
         {showPassword ? <Eye size={18} /> : <EyeOff size={18} />}
         <span className='sr-only'>
-          {showPassword ? 'Hide password' : 'Show password'}
+          {visibilityLabel
+            ? `${showPassword ? '隐藏' : '显示'}${visibilityLabel}`
+            : showPassword
+              ? 'Hide password'
+              : 'Show password'}
         </span>
       </Button>
     </div>

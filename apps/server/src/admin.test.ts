@@ -54,7 +54,8 @@ test('one-time setup, scoped tokens, persistent settings, password and session r
   assert.equal((await app.inject({url:'/api/hosts',headers:{authorization:`Bearer ${token.value}`}})).statusCode,200)
   assert.equal((await app.inject({method:'DELETE',url:`/api/manage/tokens/${token.id}`,headers})).statusCode,200)
   assert.equal((await app.inject({url:'/api/hosts',headers:{authorization:`Bearer ${token.value}`}})).statusCode,401)
-  assert.equal((await app.inject({method:'POST',url:revealUrl,headers,payload:{}})).statusCode,404)
+  assert.equal((await app.inject({method:'POST',url:revealUrl,headers,payload:{}})).json().value,token.value)
+  assert.equal((await app.inject({url:'/api/hosts',headers:{authorization:`Bearer ${token.value}`}})).statusCode,401)
   // Restart persists setup, login session, settings and revocation; bootstrap seed cannot resurrect a token.
   const originalControl=list.find((t:{scope:string})=>t.scope==='control')
   await app.inject({method:'DELETE',url:`/api/manage/tokens/${originalControl.id}`,headers})

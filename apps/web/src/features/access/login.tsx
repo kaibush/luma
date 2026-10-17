@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/card'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { PasswordInput } from '@/components/password-input'
 import { request, useRemoteAuth } from './auth'
 
 export function LoginPage() {
@@ -72,9 +73,9 @@ export function LoginPage() {
               </Field>
               <Field>
                 <FieldLabel htmlFor='login-password'>密码</FieldLabel>
-                <Input
+                <PasswordInput
                   id='login-password'
-                  type='password'
+                  visibilityLabel='密码'
                   autoComplete='current-password'
                   value={password}
                   required

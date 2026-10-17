@@ -94,7 +94,7 @@ export function registerAdmin(app: FastifyInstance, store: Store, options: {cont
   });
   app.post<{Params:{id:string}}>('/api/manage/tokens/:id/reveal', async (req, reply) => {
     const value = store.revealToken(req.params.id);
-    if (!value) return reply.code(404).send({error:'此密钥不可回显：可能已失效，或旧记录未保存原文。请创建新密钥。'});
+    if (!value) return reply.code(404).send({error:'此密钥不存在或旧记录未保存可恢复的原文，请创建新密钥。'});
     store.audit(req.principal!.name, 'token.reveal', req.params.id);
     return {value};
   });

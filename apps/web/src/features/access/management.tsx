@@ -51,6 +51,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
+import { PasswordInput } from '@/components/password-input'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { request, useRemoteAuth, type ConnectionSettings } from './auth'
 import { SettingsFields } from './settings-fields'
@@ -388,7 +389,7 @@ export function ManagementPage() {
               <CardHeader>
                 <CardTitle>已有 Token</CardTitle>
                 <CardDescription>
-                  管理员可以查看有效密钥。未保存原文的旧密钥需要重新创建。
+                  管理员可以查看已保存的密钥，包括已过期或已撤销的密钥；回显不改变有效状态。未保存原文的旧密钥需重新创建。
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -429,14 +430,7 @@ export function ManagementPage() {
                           <Button
                             variant='ghost'
                             size='sm'
-                            disabled={
-                              busy ||
-                              !token.revealable ||
-                              !!token.revokedAt ||
-                              !!(
-                                token.expiresAt && token.expiresAt < Date.now()
-                              )
-                            }
+                            disabled={busy || !token.revealable}
                             onClick={() =>
                               void run(async () => {
                                 const result = await request<{ value: string }>(
@@ -567,9 +561,9 @@ export function ManagementPage() {
                       <FieldLabel htmlFor='current-password'>
                         当前密码
                       </FieldLabel>
-                      <Input
+                      <PasswordInput
                         id='current-password'
-                        type='password'
+                        visibilityLabel='密码'
                         autoComplete='current-password'
                         value={currentPassword}
                         required
@@ -579,9 +573,9 @@ export function ManagementPage() {
                     </Field>
                     <Field>
                       <FieldLabel htmlFor='new-password'>新密码</FieldLabel>
-                      <Input
+                      <PasswordInput
                         id='new-password'
-                        type='password'
+                        visibilityLabel='密码'
                         autoComplete='new-password'
                         value={password}
                         required
@@ -594,9 +588,9 @@ export function ManagementPage() {
                       <FieldLabel htmlFor='confirm-password'>
                         确认新密码
                       </FieldLabel>
-                      <Input
+                      <PasswordInput
                         id='confirm-password'
-                        type='password'
+                        visibilityLabel='密码'
                         autoComplete='new-password'
                         value={confirm}
                         required

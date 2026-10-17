@@ -19,6 +19,7 @@ import {
   FieldDescription,
 } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { PasswordInput } from '@/components/password-input'
 import { signaling, sendSignal } from './api'
 import { RemotePeer } from './peer'
 
@@ -363,10 +364,10 @@ export function BrowserHost() {
               </Field>
               <Field data-disabled={busy}>
                 <FieldLabel htmlFor='host-token'>主机密钥</FieldLabel>
-                <Input
+                <PasswordInput
                   id='host-token'
                   value={token}
-                  type='password'
+                  visibilityLabel='密钥'
                   autoComplete='off'
                   disabled={busy}
                   required

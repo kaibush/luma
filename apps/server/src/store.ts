@@ -71,7 +71,7 @@ export class Store {
     return Buffer.concat([decipher.update(data.subarray(28)), decipher.final()]).toString('utf8');
   }
   revealToken(id: string) {
-    const row = this.db.prepare('SELECT sealed FROM tokens WHERE id=? AND revokedAt IS NULL AND (expiresAt IS NULL OR expiresAt>?)').get(id, Date.now()) as {sealed: string | null} | undefined;
+    const row = this.db.prepare('SELECT sealed FROM tokens WHERE id=?').get(id) as {sealed: string | null} | undefined;
     if (!row?.sealed) return null;
     const data = Buffer.from(row.sealed, 'base64'), decipher = createDecipheriv('aes-256-gcm', this.tokenKey, data.subarray(0, 12));
     decipher.setAAD(Buffer.from(id));

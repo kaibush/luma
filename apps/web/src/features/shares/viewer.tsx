@@ -3,7 +3,7 @@ import { mapPoint, type InputEvent } from '@remote/protocol'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Field, FieldLabel } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
+import { PasswordInput } from '@/components/password-input'
 import { sendSignal } from '@/features/remote/api'
 import { RemotePeer, type Telemetry } from '@/features/remote/peer'
 import { RemoteKeyboard } from '@/features/remote/remote-keyboard'
@@ -212,9 +212,9 @@ export function ShareViewer({ id }: { id: string }) {
         >
           <Field>
             <FieldLabel htmlFor='view-key'>分享码</FieldLabel>
-            <Input
+            <PasswordInput
               id='view-key'
-              type='password'
+              visibilityLabel='分享码'
               autoComplete='off'
               value={key}
               onChange={(e) => setKey(e.target.value)}

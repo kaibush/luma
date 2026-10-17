@@ -21,6 +21,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
+import { PasswordInput } from '@/components/password-input'
 import { api, sendSignal } from '@/features/remote/api'
 import { RemotePeer } from '@/features/remote/peer'
 import { shareLink, shareSocket, type Share } from './connection'
@@ -170,11 +171,11 @@ function ShareCard({
           </Button>
           <Field>
             <FieldLabel htmlFor={`key-${share.id}`}>新密钥（可选）</FieldLabel>
-            <Input
+            <PasswordInput
               id={`key-${share.id}`}
               value={key}
               onChange={(e) => setKey(e.target.value)}
-              type='password'
+              visibilityLabel='分享码'
               autoComplete='new-password'
               minLength={6}
               maxLength={128}

@@ -7,6 +7,7 @@ import {
   FieldLabel,
 } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { PasswordInput } from '@/components/password-input'
 import type { ConnectionSettings } from './auth'
 
 export function SettingsFields({
@@ -100,9 +101,9 @@ export function SettingsFields({
       </Field>
       <Field>
         <FieldLabel htmlFor='turn-secret'>TURN 共享密钥</FieldLabel>
-        <Input
+        <PasswordInput
           id='turn-secret'
-          type='password'
+          visibilityLabel='密钥'
           autoComplete='new-password'
           value={secret}
           minLength={16}
