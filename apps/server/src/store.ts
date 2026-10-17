@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto';
+import { createHash, createCipheriv, createDecipheriv, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto';
 import { qualitySchema } from '@remote/protocol';
 import { z } from 'zod';
 
@@ -19,14 +19,36 @@ const digest = (value: string) => createHash('sha256').update(value).digest('hex
 const derive = (password: string, salt: string) => new Promise<Buffer>((resolve, reject) => scrypt(password, salt, 64, (error, value) => error ? reject(error) : resolve(value)));
 export class Store {
   readonly db: DatabaseSync;
+  private readonly tokenKey: Buffer;
   constructor(path: string, defaults: { controlToken: string; hostToken: string; stunUrl?: string; turnUrl?: string; turnSecret?: string }) {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(path);
+    const keyPath = `${path}.token-key`;
+    if (path === ':memory:') this.tokenKey = randomBytes(32);
+    else {
+      if (!existsSync(keyPath)) {
+        const columns = this.db.prepare('PRAGMA table_info(tokens)').all() as {name: string}[];
+        if (columns.some(c => c.name === 'sealed') && this.db.prepare('SELECT 1 FROM tokens WHERE sealed IS NOT NULL LIMIT 1').get()) {
+          this.db.close();
+          throw new Error('Token encryption key missing; restore the .token-key file from backup');
+        }
+        writeFileSync(keyPath, randomBytes(32), { flag: 'wx', mode: 0o600 });
+      }
+      this.tokenKey = readFileSync(keyPath);
+      if (this.tokenKey.length !== 32) throw new Error('Invalid token encryption key');
+    }
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
       CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS tokens (id TEXT PRIMARY KEY, name TEXT NOT NULL, scope TEXT NOT NULL, hash TEXT UNIQUE NOT NULL, suffix TEXT NOT NULL, createdAt INTEGER NOT NULL, expiresAt INTEGER, revokedAt INTEGER, lastUsedAt INTEGER);
       CREATE TABLE IF NOT EXISTS logins (id TEXT PRIMARY KEY, username TEXT NOT NULL, purpose TEXT NOT NULL, expiresAt INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY, time INTEGER NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL);`);
+    const columns = this.db.prepare('PRAGMA table_info(tokens)').all() as {name: string}[];
+    if (!columns.some(c => c.name === 'sealed')) this.db.exec('ALTER TABLE tokens ADD COLUMN sealed TEXT');
+    // Recover only deployment tokens whose original value still exists in config.
+    for (const value of [defaults.controlToken, defaults.hostToken]) {
+      const row = this.db.prepare('SELECT id FROM tokens WHERE hash=? AND sealed IS NULL AND revokedAt IS NULL').get(digest(value)) as {id: string} | undefined;
+      if (row) this.db.prepare('UPDATE tokens SET sealed=? WHERE id=?').run(this.seal(row.id, value), row.id);
+    }
     if (!this.get('seeded')) {
       this.transaction(() => {
         this.set('settings', { workspaceName: 'Remote Console', defaultQuality: 'responsive', sessionMinutes: 240, stunUrl: defaults.stunUrl || '', turnUrl: defaults.turnUrl || '', turnSecret: defaults.turnSecret || '' });
@@ -35,6 +57,20 @@ export class Store {
         this.set('seeded', true);
       });
     }
+  }
+  private seal(id: string, value: string) {
+    const iv = randomBytes(12), cipher = createCipheriv('aes-256-gcm', this.tokenKey, iv);
+    cipher.setAAD(Buffer.from(id));
+    const data = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+    return Buffer.concat([iv, cipher.getAuthTag(), data]).toString('base64');
+  }
+  revealToken(id: string) {
+    const row = this.db.prepare('SELECT sealed FROM tokens WHERE id=? AND revokedAt IS NULL AND (expiresAt IS NULL OR expiresAt>?)').get(id, Date.now()) as {sealed: string | null} | undefined;
+    if (!row?.sealed) return null;
+    const data = Buffer.from(row.sealed, 'base64'), decipher = createDecipheriv('aes-256-gcm', this.tokenKey, data.subarray(0, 12));
+    decipher.setAAD(Buffer.from(id));
+    decipher.setAuthTag(data.subarray(12, 28));
+    return Buffer.concat([decipher.update(data.subarray(28)), decipher.final()]).toString('utf8');
   }
   private get<T>(key: string): T | undefined { const row = this.db.prepare('SELECT value FROM kv WHERE key=?').get(key) as { value: string } | undefined; return row && JSON.parse(row.value); }
   private set(key: string, value: unknown) { this.db.prepare('INSERT INTO kv(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key, JSON.stringify(value)); }
@@ -78,7 +114,7 @@ export class Store {
   logout(id: string) { this.db.prepare('DELETE FROM logins WHERE id=?').run(id); }
   addToken(name: string, scope: 'control' | 'host', supplied?: string, days?: number) {
     const value = supplied || `rc_${scope}_${randomBytes(32).toString('base64url')}`, id = randomUUID();
-    this.db.prepare('INSERT INTO tokens(id,name,scope,hash,suffix,createdAt,expiresAt) VALUES(?,?,?,?,?,?,?)').run(id, name, scope, digest(value), value.slice(-4), Date.now(), days ? Date.now() + days * 86400_000 : null);
+    this.db.prepare('INSERT INTO tokens(id,name,scope,hash,suffix,createdAt,expiresAt,sealed) VALUES(?,?,?,?,?,?,?,?)').run(id, name, scope, digest(value), value.slice(-4), Date.now(), days ? Date.now() + days * 86400_000 : null, this.seal(id, value));
     return { id, value };
   }
   token(value: string, scope: 'control' | 'host'): Principal | null {
@@ -94,7 +130,7 @@ export class Store {
       : this.db.prepare('SELECT id FROM tokens WHERE id=? AND revokedAt IS NULL AND (expiresAt IS NULL OR expiresAt>?)').get(principal.id, Date.now());
     return !!row;
   }
-  tokens() { return this.db.prepare('SELECT id,name,scope,suffix,createdAt,expiresAt,revokedAt,lastUsedAt FROM tokens ORDER BY createdAt DESC').all(); }
+  tokens() { return this.db.prepare('SELECT id,name,scope,suffix,createdAt,expiresAt,revokedAt,lastUsedAt,(sealed IS NOT NULL) AS revealable FROM tokens ORDER BY createdAt DESC').all(); }
   revoke(id: string) { return this.db.prepare('UPDATE tokens SET revokedAt=? WHERE id=? AND revokedAt IS NULL').run(Date.now(), id).changes; }
   audit(actor: string, action: string, detail: string) {
     this.db.prepare('INSERT INTO audit(time,actor,action,detail) VALUES(?,?,?,?)').run(Date.now(), actor, action, detail);

@@ -1,4 +1,5 @@
 import { qualityProfiles } from '@remote/protocol'
+import { Button } from '@/components/ui/button'
 import {
   Field,
   FieldDescription,
@@ -13,11 +14,13 @@ export function SettingsFields({
   onChange,
   secret,
   onSecret,
+  onReveal,
 }: {
   value: ConnectionSettings
   onChange: (v: ConnectionSettings) => void
   secret: string
   onSecret: (v: string) => void
+  onReveal?: () => void
 }) {
   return (
     <FieldGroup>
@@ -111,6 +114,11 @@ export function SettingsFields({
               : '启用 TURN 时填写，与 coturn 一致'
           }
         />
+        {onReveal && value.turnSecretSet && (
+          <Button type='button' variant='outline' onClick={onReveal}>
+            查看当前共享密钥
+          </Button>
+        )}
         <FieldDescription>
           这里保存的是 API 使用的凭据；更换密钥时需同步修改 TURN 服务器配置。
         </FieldDescription>

@@ -27,6 +27,11 @@ export async function createApp(config: Config) {
     if (connection.turnUrl && connection.turnSecret) {
       const username = `${Math.floor(Date.now() / 1000) + 5 * 3600}:${sessionId}`;
       result.push({ urls: connection.turnUrl, username, credential: createHmac('sha1', connection.turnSecret).update(username).digest('base64') });
+      // A bare TURN URI defaults to UDP. Offer TCP too for cellular / Wi-Fi
+      // networks that filter UDP. Preserve explicitly configured transports.
+      if (connection.turnUrl.startsWith('turn:') && !connection.turnUrl.includes('?')) {
+        result.push({ ...result[result.length - 1], urls: `${connection.turnUrl}?transport=tcp` });
+      }
     }
     return result;
   };

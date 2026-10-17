@@ -41,15 +41,33 @@ test('one-time setup, scoped tokens, persistent settings, password and session r
   const created=await app.inject({method:'POST',url:'/api/manage/tokens',headers,payload:{name:'test controller',scope:'control',days:7}})
   assert.equal(created.statusCode,201)
   const token=created.json()
+  const revealUrl=`/api/manage/tokens/${token.id}/reveal`
+  assert.equal((await app.inject({method:'POST',url:revealUrl,headers:browser,payload:{}})).statusCode,401)
+  assert.equal((await app.inject({method:'POST',url:revealUrl,headers:{...browser,authorization:`Bearer ${controlToken}`},payload:{}})).statusCode,401)
+  assert.equal((await app.inject({method:'POST',url:revealUrl,headers:{...headers,origin:'https://evil.test'},payload:{}})).statusCode,403)
+  const revealed=await app.inject({method:'POST',url:revealUrl,headers,payload:{}})
+  assert.equal(revealed.json().value,token.value)
+  assert.equal(revealed.headers['cache-control'],'no-store')
+  assert.ok(!(await app.inject({url:'/api/manage/tokens',headers})).body.includes(token.value))
+  assert.ok(!(await app.inject({url:'/api/manage/audit',headers})).body.includes(token.value))
+
   assert.equal((await app.inject({url:'/api/hosts',headers:{authorization:`Bearer ${token.value}`}})).statusCode,200)
   assert.equal((await app.inject({method:'DELETE',url:`/api/manage/tokens/${token.id}`,headers})).statusCode,200)
   assert.equal((await app.inject({url:'/api/hosts',headers:{authorization:`Bearer ${token.value}`}})).statusCode,401)
+  assert.equal((await app.inject({method:'POST',url:revealUrl,headers,payload:{}})).statusCode,404)
   // Restart persists setup, login session, settings and revocation; bootstrap seed cannot resurrect a token.
   const originalControl=list.find((t:{scope:string})=>t.scope==='control')
   await app.inject({method:'DELETE',url:`/api/manage/tokens/${originalControl.id}`,headers})
   await app.close()
   app=await createApp({controlToken,hostToken,origins:[origin],dataPath,secureCookies:true,logger:false})
   assert.equal((await app.inject({url:'/api/manage/settings',headers})).json().settings.workspaceName,updated.workspaceName)
+  const originalHost=list.find((t:{scope:string})=>t.scope==='host')
+  assert.equal((await app.inject({method:'POST',url:`/api/manage/tokens/${originalHost.id}/reveal`,headers,payload:{}})).json().value,hostToken)
+  assert.equal((await app.inject({method:'POST',url:'/api/manage/settings/turn-secret/reveal',headers:{...browser,authorization:`Bearer ${hostToken}`},payload:{}})).statusCode,401)
+  const turnSecret='turn-test-secret-12345678'
+  await app.inject({method:'PUT',url:'/api/manage/settings',headers,payload:{settings:updated,turnSecret}})
+  assert.equal((await app.inject({method:'POST',url:'/api/manage/settings/turn-secret/reveal',headers,payload:{}})).json().value,turnSecret)
+
   assert.equal((await app.inject({url:'/api/hosts',headers:{authorization:`Bearer ${controlToken}`}})).statusCode,401)
   assert.equal((await app.inject({method:'POST',url:'/api/auth/login',headers:browser,payload:{username:'admin',password:'bad'}})).statusCode,401)
   assert.equal((await app.inject({method:'POST',url:'/api/auth/password',headers,payload:{currentPassword:password,password:'replacement-password-1234'}})).statusCode,200)

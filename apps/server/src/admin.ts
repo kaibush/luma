@@ -91,6 +91,16 @@ export function registerAdmin(app: FastifyInstance, store: Store, options: {cont
     store.audit(req.principal!.name, 'token.create', parsed.data.name);
     return reply.code(201).send(token);
   });
+  app.post<{Params:{id:string}}>('/api/manage/tokens/:id/reveal', async (req, reply) => {
+    const value = store.revealToken(req.params.id);
+    if (!value) return reply.code(404).send({error:'此密钥不可回显：可能已失效，或旧记录未保存原文。请创建新密钥。'});
+    store.audit(req.principal!.name, 'token.reveal', req.params.id);
+    return {value};
+  });
+  app.post('/api/manage/settings/turn-secret/reveal', async (req) => {
+    store.audit(req.principal!.name, 'turn-secret.reveal', '管理员查看 TURN 共享密钥');
+    return {value: store.credentials().turnSecret};
+  });
   app.delete<{Params:{id:string}}>('/api/manage/tokens/:id', async (req, reply) => {
     if (!store.revoke(req.params.id)) return reply.code(404).send({error:'Token 不存在或已撤销'});
     disconnect({kind:'token',id:req.params.id,scope:'control',name:''});

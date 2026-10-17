@@ -29,6 +29,14 @@ import {
   CardContent,
   CardFooter,
 } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -49,6 +57,7 @@ import { SettingsFields } from './settings-fields'
 
 interface Token {
   id: string
+  revealable: boolean
   name: string
   scope: 'host' | 'control'
   suffix: string
@@ -87,6 +96,10 @@ export function ManagementPage() {
     [days, setDays] = useState('90'),
     [created, setCreated] = useState(''),
     [revoke, setRevoke] = useState<Token | null>(null)
+  const [revealed, setRevealed] = useState<{
+    name: string
+    value: string
+  } | null>(null)
   const [currentPassword, setCurrentPassword] = useState(''),
     [password, setPassword] = useState(''),
     [confirm, setConfirm] = useState('')
@@ -219,6 +232,18 @@ export function ManagementPage() {
                       onChange={setSettings}
                       secret={secret}
                       onSecret={setSecret}
+                      onReveal={() =>
+                        void run(async () => {
+                          const result = await request<{ value: string }>(
+                            '/manage/settings/turn-secret/reveal',
+                            {}
+                          )
+                          setRevealed({
+                            name: 'TURN 共享密钥',
+                            value: result.value,
+                          })
+                        })
+                      }
                     />
                   </CardContent>
                   <CardFooter>
@@ -248,7 +273,7 @@ export function ManagementPage() {
                 <CardHeader>
                   <CardTitle>新 Token 已创建</CardTitle>
                   <CardDescription>
-                    完整 Token 仅显示这一次，请立即保存。关闭后无法再次查看。
+                    完整 Token 已加密保存，之后可在下方列表中查看和复制。
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -363,7 +388,7 @@ export function ManagementPage() {
               <CardHeader>
                 <CardTitle>已有 Token</CardTitle>
                 <CardDescription>
-                  原有部署密钥已自动迁移，完整内容不会再次展示。
+                  管理员可以查看有效密钥。未保存原文的旧密钥需要重新创建。
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -401,6 +426,32 @@ export function ManagementPage() {
                           {token.expiresAt ? date(token.expiresAt) : '长期有效'}
                         </TableCell>
                         <TableCell>
+                          <Button
+                            variant='ghost'
+                            size='sm'
+                            disabled={
+                              busy ||
+                              !token.revealable ||
+                              !!token.revokedAt ||
+                              !!(
+                                token.expiresAt && token.expiresAt < Date.now()
+                              )
+                            }
+                            onClick={() =>
+                              void run(async () => {
+                                const result = await request<{ value: string }>(
+                                  `/manage/tokens/${token.id}/reveal`,
+                                  {}
+                                )
+                                setRevealed({
+                                  name: token.name,
+                                  value: result.value,
+                                })
+                              })
+                            }
+                          >
+                            查看密钥
+                          </Button>
                           <Button
                             variant='outline'
                             size='sm'
@@ -643,6 +694,43 @@ export function ManagementPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <Dialog
+        open={!!revealed}
+        onOpenChange={(open) => {
+          if (!open) setRevealed(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{revealed?.name}</DialogTitle>
+            <DialogDescription>
+              完整密钥，可直接复制用于接入。
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            aria-label='完整密钥'
+            value={revealed?.value ?? ''}
+            readOnly
+            autoComplete='off'
+          />
+          <DialogFooter>
+            <Button variant='outline' onClick={() => setRevealed(null)}>
+              关闭
+            </Button>
+            <Button
+              onClick={() =>
+                void navigator.clipboard
+                  .writeText(revealed?.value ?? '')
+                  .then(() => toast.success('已复制'))
+                  .catch(() => toast.error('请手动复制密钥'))
+              }
+            >
+              <Copy data-icon='inline-start' />
+              复制密钥
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
