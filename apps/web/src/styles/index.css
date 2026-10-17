@@ -91,3 +91,16 @@
 .remote-stage { position: relative; flex: 1; min-height: 0; overflow: hidden; }
 .remote-viewer button { min-height: 44px; min-width: 44px; }
 @media (orientation: landscape) and (max-height: 500px) { .remote-viewer header { min-height: 44px; } .remote-viewer footer { padding-block: 2px; } }
+
+/* Panels scroll independently, leaving the desktop and close controls reachable. */
+.remote-panel { flex: 0 1 auto; min-height: 0; max-height: 50%; overflow: auto; overscroll-behavior: contain; padding: 8px; }
+.remote-viewer .remote-key { min-width: 0; padding-inline: 2px; }
+.remote-viewer input { font-size: 16px; } /* Avoid automatic input zoom on iPhone. */
+@media (orientation: landscape) and (min-width: 640px) and (max-height: 600px) {
+  .remote-viewer[data-panel='keyboard'] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 46%); grid-template-rows: auto minmax(0, 1fr) auto; }
+  .remote-viewer[data-panel='keyboard'] > header { grid-column: 1 / -1; }
+  .remote-viewer[data-panel='keyboard'] > .remote-stage { grid-column: 1; grid-row: 2; }
+  .remote-viewer[data-panel='keyboard'] > .remote-panel { grid-column: 2; grid-row: 2; max-height: none; border-inline-start: 1px solid var(--border); border-top: 0; }
+  .remote-viewer[data-panel='keyboard'] > footer { grid-column: 1 / -1; grid-row: 3; }
+  .remote-viewer[data-panel='keyboard'] > [role='alert'] { grid-column: 1; grid-row: 2; align-self: end; }
+}

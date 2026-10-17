@@ -1,7 +1,7 @@
 import '@/styles/index.css'
-import { page } from 'vitest/browser'
 import { afterEach, expect, test, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
+import { page } from 'vitest/browser'
 import { Viewer } from './viewer'
 
 const { sendInput } = vi.hoisted(() => ({ sendInput: vi.fn() }))
@@ -78,6 +78,7 @@ test('touchpad swipes move without holding left, taps click cursor, direct mode 
     [390, 844],
   ]) {
     await page.viewport(width, height)
+    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))
     const viewer = document.querySelector('.remote-viewer')!
     expect(viewer.scrollWidth).toBeLessThanOrEqual(width)
     expect(
@@ -86,7 +87,9 @@ test('touchpad swipes move without holding left, taps click cursor, direct mode 
     expect(
       document.querySelector('footer')!.getBoundingClientRect().bottom
     ).toBeLessThanOrEqual(height)
-    await page.screenshot({ path: `./__screenshots__/remote-touchpad-${width}.png` })
+    await page.screenshot({
+      path: `./__screenshots__/remote-touchpad-${width}.png`,
+    })
   }
   sendInput.mockClear()
   pointer('pointerdown', 100, 100)
@@ -141,4 +144,116 @@ test('touchpad swipes move without holding left, taps click cursor, direct mode 
     { type: 'button', button: 'left', down: false, x: 0.5, y: 0.5 },
   ])
   await screen.unmount()
+})
+
+test('mobile keyboard sends chords in order, restores tools after fullscreen fallback and fits resized viewport', async () => {
+  const enabled = vi
+    .spyOn(document, 'fullscreenEnabled', 'get')
+    .mockReturnValue(false)
+  const screen = await render(
+    <Viewer
+      host={{
+        id: 'host',
+        name: '本机 Linux 桌面',
+        busy: false,
+        kind: 'linux-x11',
+        capabilities: { video: true, systemInput: true, textInput: 'ascii' },
+      }}
+      session={{
+        id: 'keyboard',
+        hostId: 'host',
+        quality: 'responsive',
+        expiresAt: Date.now() + 60000,
+      }}
+      iceServers={[]}
+      token=''
+      onExit={() => {}}
+    />
+  )
+  await new Promise((r) => setTimeout(r, 30))
+  await screen.getByRole('button', { name: '沉浸模式' }).click()
+  expect(document.querySelector('footer')).toBeNull()
+  expect(document.querySelector('.remote-viewer')!.textContent).not.toContain(
+    '不支持页面全屏'
+  )
+  await screen.getByRole('button', { name: '显示工具' }).click()
+  await screen.getByRole('button', { name: '键盘', exact: true }).click()
+  sendInput.mockClear()
+  await screen
+    .getByRole('button', { name: '复制 Ctrl + C', exact: true })
+    .click()
+  expect(sendInput.mock.calls.map((c) => c[0])).toEqual([
+    { type: 'key', code: 'ControlLeft', down: true },
+    { type: 'key', code: 'KeyC', down: true },
+    { type: 'key', code: 'KeyC', down: false },
+    { type: 'key', code: 'ControlLeft', down: false },
+  ])
+  await screen.getByRole('tab', { name: '完整按键' }).click()
+  sendInput.mockClear()
+  await screen.getByRole('button', { name: 'Ctrl', exact: true }).click()
+  await screen.getByRole('button', { name: 'Shift', exact: true }).click()
+  expect(sendInput).not.toHaveBeenCalled() // Modifiers are selected locally until a key is tapped.
+  await screen.getByRole('button', { name: 'C', exact: true }).click()
+  expect(sendInput.mock.calls.map((c) => c[0])).toEqual([
+    { type: 'key', code: 'ControlLeft', down: true },
+    { type: 'key', code: 'ShiftLeft', down: true },
+    { type: 'key', code: 'KeyC', down: true },
+    { type: 'key', code: 'KeyC', down: false },
+    { type: 'key', code: 'ShiftLeft', down: false },
+    { type: 'key', code: 'ControlLeft', down: false },
+  ])
+  expect(
+    screen
+      .getByRole('button', { name: 'Ctrl', exact: true })
+      .element()
+      .getAttribute('aria-pressed')
+  ).toBe('false')
+  sendInput.mockClear()
+  await screen.getByRole('button', { name: 'F5', exact: true }).click()
+  expect(sendInput.mock.calls.map((c) => c[0])).toEqual([
+    { type: 'key', code: 'F5', down: true },
+    { type: 'key', code: 'F5', down: false },
+  ])
+  for (const [width, height] of [
+    [844, 390],
+    [390, 844],
+    [390, 380],
+  ]) {
+    await page.viewport(width, height)
+    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))
+    const panel = document.querySelector('.remote-panel')!
+    panel.scrollTop = 0
+    expect(
+      document.querySelector('.remote-viewer')!.scrollWidth
+    ).toBeLessThanOrEqual(width)
+    expect(
+      document.querySelector('footer')!.getBoundingClientRect().bottom
+    ).toBeLessThanOrEqual(height)
+    expect(
+      document.querySelector('.remote-stage')!.getBoundingClientRect().height
+    ).toBeGreaterThan(60)
+    await page.screenshot({
+      path: `./__screenshots__/keyboard-${width}-${height}.png`,
+    })
+  }
+  await screen.getByRole('tab', { name: '文字输入' }).click()
+  await screen.getByRole('textbox', { name: '发送文本' }).fill('abc123')
+  sendInput.mockClear()
+  await screen.getByRole('button', { name: '发送', exact: true }).click()
+  expect(sendInput).toHaveBeenCalledWith({ type: 'text', text: 'abc123' })
+  await screen.getByRole('textbox', { name: '发送文本' }).fill('中文')
+  sendInput.mockClear()
+  await screen.getByRole('button', { name: '发送', exact: true }).click()
+  expect(sendInput).not.toHaveBeenCalled()
+  await screen.getByRole('button', { name: '收起键盘' }).click()
+  expect(document.querySelector('[aria-label="远程键盘"]')).toBeNull()
+  await screen.getByRole('button', { name: '更多', exact: true }).click()
+  expect(
+    document.querySelector('[aria-label="更多工具"]')!.textContent
+  ).toContain('添加到主屏幕')
+  sendInput.mockClear()
+  await screen.getByRole('button', { name: '释放所有按键' }).click()
+  expect(sendInput).toHaveBeenCalledWith({ type: 'release-all' })
+  await screen.unmount()
+  enabled.mockRestore()
 })

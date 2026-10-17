@@ -12,7 +12,6 @@ import {
   Radio,
   RefreshCw,
   ShieldCheck,
-  Zap,
 } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -126,7 +125,7 @@ export function RemoteDashboard() {
               你的桌面，随时连接。
             </h1>
             <p className='text-muted-foreground'>
-              从手机到电脑，在浏览器中访问你的工作空间。
+              选择一台在线电脑，点击「连接桌面」即可开始。
             </p>
           </div>
           <Button asChild variant='outline'>
@@ -136,43 +135,6 @@ export function RemoteDashboard() {
               <ArrowUpRight data-icon='inline-end' />
             </a>
           </Button>
-        </div>
-        <div className='grid gap-4 sm:grid-cols-3'>
-          {[
-            {
-              icon: Monitor,
-              title: '在线主机',
-              value: `${hosts.length} 台`,
-              description: '由已连接的共享端实时提供',
-            },
-            {
-              icon: Zap,
-              title: '视频链路',
-              value: 'WebRTC',
-              description: '优先直连 · 支持 TURN 中继',
-            },
-            {
-              icon: ShieldCheck,
-              title: '连接保护',
-              value: '加密传输',
-              description: '视频与输入由 DTLS / SRTP 保护',
-            },
-          ].map((item) => (
-            <Card key={item.title}>
-              <CardHeader>
-                <CardDescription className='flex items-center gap-2'>
-                  <item.icon className='size-4' />
-                  {item.title}
-                </CardDescription>
-                <CardTitle>{item.value}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className='text-sm text-muted-foreground'>
-                  {item.description}
-                </p>
-              </CardContent>
-            </Card>
-          ))}
         </div>
         {error && (
           <Alert variant='destructive' role='alert'>

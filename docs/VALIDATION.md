@@ -43,3 +43,9 @@
 浏览器组件回归覆盖：滑动只移动不按住左键；异地轻点仍点击当前光标位置；连续两次轻点输出两组左键按下/释放；长按松手、取消和多指不误点击；边缘坐标限制；切回直接触控后保留按下拖动行为。使用 `npm run test -w @remote/web -- src/features/remote/viewer.test.tsx`。
 
 已检查 844×390 横屏与 390×844 竖屏：无横向溢出，工具栏在视口内。测试使用模拟 WebRTC 输入端检查真实浏览器 PointerEvent 处理，不代表已完成手机真机网络延迟验收。
+
+## 手机界面与扩展键盘（2026-10-17）
+
+Chromium 浏览器 4 项测试通过：触控模式回归；全屏能力缺失/权限拒绝自动使用沉浸模式；横屏锁定失败不误报全屏失败；快捷组合与自定义修饰键的按下/释放顺序、F5、文字校验、收起键盘及释放按键。检查 844×390、390×844 和 390×380 布局，横屏键盘采用侧边布局。生产构建通过。测试模拟浏览器权限限制，不等同于 iOS 26 真机验收。
+
+同一组 4 项测试也已在 WebKit 中通过（`TEST_BROWSER=webkit npm run test -w @remote/web -- src/features/remote/viewer.test.tsx src/features/remote/display-mode.test.ts`）。发布后确认域名返回新键盘/沉浸模式资源、standalone manifest、主屏幕图标，API 健康检查通过。WebKit 自动化仍不能替代 iOS 26 真机的浏览器栏行为验收。

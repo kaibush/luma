@@ -13,14 +13,18 @@ import {
   MousePointer2,
   RotateCw,
   Hand,
+  MoreHorizontal,
+  Minimize,
+  X,
 } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { api, sendSignal, signaling } from './api'
+import { canFullscreen, enterDisplayMode } from './display-mode'
 import { RemotePeer, type Telemetry } from './peer'
+import { RemoteKeyboard, sendChord } from './remote-keyboard'
 import { moveTouch, isTap, type TouchGesture } from './touchpad'
 
 export function Viewer({
@@ -42,14 +46,44 @@ export function Viewer({
   const [state, setState] = useState('准备连接'),
     [stats, setStats] = useState<Telemetry>({}),
     [error, setError] = useState('')
-  const [keyboard, setKeyboard] = useState(false),
-    [text, setText] = useState('')
+  const [panel, setPanel] = useState<'keyboard' | 'more' | null>(null)
+  const [immersive, setImmersive] = useState(false)
+  const [nativeFullscreen, setNativeFullscreen] = useState(false)
+  const [supportsFullscreen, setSupportsFullscreen] = useState(false)
+  const [displayHint, setDisplayHint] = useState('')
   const [touchpad, setTouchpad] = useState(false)
   const gesture = useRef<TouchGesture | null>(null)
   const activePointer = useRef<number | null>(null),
     lastPoint = useRef({ x: 0.5, y: 0.5 }),
     pendingMove = useRef<InputEvent | null>(null),
     raf = useRef(0)
+  useEffect(() => {
+    const element = container.current!
+    setSupportsFullscreen(canFullscreen(element))
+    const updateFullscreen = () => {
+      setNativeFullscreen(!!document.fullscreenElement)
+      if (!document.fullscreenElement) setImmersive(false)
+    }
+    const viewport = window.visualViewport
+    const resize = () => {
+      if (!viewport) return
+      element.style.height = `${viewport.height}px`
+      element.style.top = `${viewport.offsetTop}px`
+      element.style.left = `${viewport.offsetLeft}px`
+
+    }
+    resize()
+    window.addEventListener('resize', resize)
+    viewport?.addEventListener('resize', resize)
+    viewport?.addEventListener('scroll', resize)
+    document.addEventListener('fullscreenchange', updateFullscreen)
+    return () => {
+      window.removeEventListener('resize', resize)
+      viewport?.removeEventListener('resize', resize)
+      viewport?.removeEventListener('scroll', resize)
+      document.removeEventListener('fullscreenchange', updateFullscreen)
+    }
+  }, [])
   useEffect(() => {
     const start = () => {
       let disposed = false
@@ -217,56 +251,115 @@ export function Viewer({
     if (g.moved) queueMove()
   }
   const fullscreen = async () => {
-    try {
-      if (!document.fullscreenElement)
-        await container.current?.requestFullscreen()
-      const orientation = screen.orientation as ScreenOrientation & {
-        lock?: (value: string) => Promise<void>
+    if (document.fullscreenElement) {
+      try {
+        await document.exitFullscreen()
+      } catch {
+        /* Restore tools even if browser refuses. */
       }
-      await orientation.lock?.('landscape').catch(() => {})
-    } catch {
-      setError('此浏览器不支持页面全屏，请旋转手机并收起浏览器工具栏')
+      setImmersive(false)
+      return
     }
+    releasePointer()
+    setPanel(null)
+    const result = await enterDisplayMode(container.current!)
+    setImmersive(true)
+    setDisplayHint(
+      result === 'immersive'
+        ? '已隐藏工具栏。浏览器地址栏由系统控制；需要操作时点「显示工具」。'
+        : ''
+    )
+  }
+  const openPanel = (next: 'keyboard' | 'more') => {
+    releasePointer()
+    setPanel(panel === next ? null : next)
+  }
+  const exit = () => {
+    releasePointer()
+    if (document.fullscreenElement)
+      void document.exitFullscreen().catch(() => {})
+    onExit()
   }
   return createPortal(
     <div
       ref={container}
       className='remote-viewer bg-background text-foreground'
+      data-panel={immersive ? undefined : panel ?? undefined}
     >
-      <header className='flex min-h-12 items-center justify-between gap-2 border-b px-3'>
-        <div className='flex min-w-0 items-center gap-2'>
-          <Button
-            variant='ghost'
-            size='icon'
-            aria-label='结束会话并返回'
-            onClick={onExit}
-          >
-            <ArrowLeft />
-          </Button>
-          <span className='truncate text-sm font-medium'>{host.name}</span>
-          <Badge variant='secondary'>
-            {state === 'connected' ? '已连接' : state}
-          </Badge>
-        </div>
-        <div className='flex items-center gap-2 text-xs text-muted-foreground'>
-          <span className='hidden sm:inline'>
-            {stats.transport ?? '协商中'} ·{' '}
-            {stats.rttMs === undefined ? '—' : Math.round(stats.rttMs)} ms RTT
-          </span>
+      {!immersive && (
+        <header className='flex min-h-12 shrink-0 items-center justify-between gap-2 border-b px-2'>
+          <div className='flex min-w-0 items-center gap-2'>
+            <Button
+              variant='ghost'
+              size='sm'
+              aria-label='结束会话并返回'
+              onClick={exit}
+            >
+              <ArrowLeft data-icon='inline-start' />
+              返回
+            </Button>
+            <span className='truncate text-sm font-medium'>{host.name}</span>
+            <Badge variant='secondary'>
+              {state === 'connected'
+                ? '已连接'
+                : state === '准备连接'
+                  ? '连接中'
+                  : state === 'disconnected' || state === 'closed'
+                    ? '已断开'
+                    : state === 'failed'
+                      ? '连接失败'
+                      : '连接中'}
+            </Badge>
+          </div>
           <Button
             variant='outline'
-            size='icon'
-            aria-label='横屏全屏'
+            size='sm'
+            aria-label={
+              nativeFullscreen
+                ? '退出全屏'
+                : supportsFullscreen
+                  ? '横屏全屏'
+                  : '沉浸模式'
+            }
             onClick={() => void fullscreen()}
           >
-            <Expand />
+            {nativeFullscreen ? (
+              <Minimize data-icon='inline-start' />
+            ) : (
+              <Expand data-icon='inline-start' />
+            )}
+            {nativeFullscreen
+              ? '退出全屏'
+              : supportsFullscreen
+                ? '全屏'
+                : '沉浸'}
           </Button>
-        </div>
-      </header>
+        </header>
+      )}
       <div
         className='remote-stage bg-muted'
         onContextMenu={(e) => e.preventDefault()}
       >
+        {immersive && (
+          <div className='absolute end-2 top-2 z-10 flex max-w-[85%] flex-col items-end gap-2'>
+            <Button
+              variant='secondary'
+              size='sm'
+              onClick={() => {
+                setImmersive(false)
+                setDisplayHint('')
+              }}
+            >
+              <Minimize data-icon='inline-start' />
+              显示工具
+            </Button>
+            {displayHint && (
+              <Alert className='max-w-sm'>
+                <AlertDescription>{displayHint}</AlertDescription>
+              </Alert>
+            )}
+          </div>
+        )}
         <video
           ref={video}
           autoPlay
@@ -401,111 +494,146 @@ export function Viewer({
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      {keyboard && (
-        <form
-          className='flex gap-2 border-t p-2'
-          onSubmit={(e) => {
-            e.preventDefault()
-            if (
-              host.capabilities.textInput === 'ascii' &&
-              /[^\x20-\x7e\n]/.test(text)
-            ) {
-              setError('此主机暂仅支持英文、数字和符号文本；中文输入尚未接入')
-              return
-            }
-            if (text) send({ type: 'text', text })
-            setText('')
+      {!immersive && panel === 'keyboard' && (
+        <RemoteKeyboard
+          send={send}
+          asciiOnly={host.capabilities.textInput === 'ascii'}
+          onClose={() => {
+            releasePointer()
+            setPanel(null)
           }}
-        >
-          <Input
-            aria-label='发送文本'
-            placeholder={
-              host.capabilities.systemInput
-                ? '输入英文或数字（暂不支持中文文本提交）'
-                : '输入文字（浏览器主机只在测试面板显示）'
-            }
-            value={text}
-            maxLength={2048}
-            onChange={(e) => setText(e.target.value)}
-          />
-          <Button type='submit'>发送</Button>
-        </form>
+        />
       )}
-      <footer className='flex flex-wrap items-center justify-between gap-2 border-t p-2'>
-        <div className='flex flex-wrap items-center gap-1'>
-          <Button
-            variant={touchpad ? 'default' : 'outline'}
-            size='sm'
-            aria-label='触控板模式'
-            aria-pressed={touchpad}
-            onClick={() => {
-              releasePointer()
-              setTouchpad(!touchpad)
-            }}
-          >
-            <Hand data-icon='inline-start' />
-            {touchpad ? '触控板' : '直接触控'}
-          </Button>
-          <Button
-            variant='outline'
-            size='sm'
-            onClick={() => setKeyboard(!keyboard)}
-          >
-            <Keyboard />
-            键盘
-          </Button>
-          <Button
-            variant='ghost'
-            size='sm'
-            onClick={() => {
-              send({
-                type: 'button',
-                button: 'right',
-                down: true,
-                ...lastPoint.current,
-              })
-              send({
-                type: 'button',
-                button: 'right',
-                down: false,
-                ...lastPoint.current,
-              })
-            }}
-          >
-            <MousePointer2 />
-            右键
-          </Button>
-          <Button
-            variant='ghost'
-            size='sm'
-            onClick={() => {
-              send({ type: 'key', code: 'Escape', down: true })
-              send({ type: 'key', code: 'Escape', down: false })
-            }}
-          >
-            Esc
-          </Button>
-          <Button
-            variant='ghost'
-            size='sm'
-            onClick={() => send({ type: 'release-all' })}
-          >
-            <RotateCw />
-            释放按键
-          </Button>
-        </div>
-        <span className='text-xs text-muted-foreground'>
-          {touchpad && <span>滑动移动 · 轻点单击 / 连点双击 · </span>}
-          {stats.fps ?? '—'} FPS · {stats.mbps?.toFixed(1) ?? '—'} Mbps ·{' '}
-          {stats.width ? `${stats.width}×${stats.height}` : '—'}{' '}
-          <span className='hidden md:inline'>
-            ·{' '}
+      {!immersive && panel === 'more' && (
+        <section
+          className='remote-panel border-t bg-background'
+          aria-label='更多工具'
+        >
+          <div className='flex items-center justify-between'>
+            <h2 className='font-medium'>操作与连接</h2>
+            <Button
+              variant='ghost'
+              size='icon'
+              aria-label='关闭更多工具'
+              onClick={() => setPanel(null)}
+            >
+              <X />
+            </Button>
+          </div>
+          <p className='mb-2 text-sm text-muted-foreground'>
+            {touchpad
+              ? '触控板：滑动移动光标，在任意位置轻点单击、连点双击。'
+              : '直接触控：点哪里，鼠标就点哪里；按住移动可拖拽。'}
+          </p>
+          <div className='flex flex-wrap gap-2'>
+            <Button
+              variant='outline'
+              size='sm'
+              onClick={() => sendChord(send, ['Escape'])}
+            >
+              Esc
+            </Button>
+            <Button variant='outline' size='sm' onClick={releasePointer}>
+              <RotateCw data-icon='inline-start' />
+              释放所有按键
+            </Button>
+            <Button
+              variant='outline'
+              size='sm'
+              onClick={() => send({ type: 'wheel', dx: 0, dy: -400 })}
+            >
+              向上滚动
+            </Button>
+            <Button
+              variant='outline'
+              size='sm'
+              onClick={() => send({ type: 'wheel', dx: 0, dy: 400 })}
+            >
+              向下滚动
+            </Button>
+          </div>
+          <p className='mt-3 text-xs text-muted-foreground'>
+            {stats.transport ?? '正在检测连接'} · {stats.fps ?? '—'} FPS ·{' '}
+            {stats.mbps?.toFixed(1) ?? '—'} Mbps ·{' '}
+            {stats.rttMs === undefined ? '—' : Math.round(stats.rttMs)} ms RTT ·{' '}
+            {stats.width ? `${stats.width}×${stats.height}` : '—'} ·{' '}
             {host.capabilities.systemInput
-              ? 'Linux 桌面控制'
+              ? '系统桌面控制'
               : '浏览器共享 / 输入测试'}
-          </span>
-        </span>
-      </footer>
+          </p>
+          <Alert className='mt-3'>
+            <AlertDescription>
+              iPhone
+              浏览器的全屏能力由系统限制。可以使用「沉浸」隐藏页面工具栏，再手动横屏。想减少浏览器栏遮挡，可在
+              Safari 打开本站，点分享 → 添加到主屏幕（如有「作为 Web App
+              打开」，请开启），再从主屏幕图标进入。
+            </AlertDescription>
+          </Alert>
+        </section>
+      )}
+      {!immersive && (
+        <footer className='shrink-0 border-t bg-background px-2 py-1'>
+          <div className='grid grid-cols-4 gap-1'>
+            <Button
+              variant={touchpad ? 'secondary' : 'ghost'}
+              size='sm'
+              aria-label='触控板模式'
+              aria-pressed={touchpad}
+              onClick={() => {
+                releasePointer()
+                setTouchpad(!touchpad)
+              }}
+            >
+              <Hand data-icon='inline-start' />
+              {touchpad ? '触控板' : '直接触控'}
+            </Button>
+            <Button
+              variant={panel === 'keyboard' ? 'secondary' : 'ghost'}
+              size='sm'
+              aria-expanded={panel === 'keyboard'}
+              onClick={() => openPanel('keyboard')}
+            >
+              <Keyboard data-icon='inline-start' />
+              键盘
+            </Button>
+            <Button
+              variant='ghost'
+              size='sm'
+              onClick={() => {
+                send({
+                  type: 'button',
+                  button: 'right',
+                  down: true,
+                  ...lastPoint.current,
+                })
+                send({
+                  type: 'button',
+                  button: 'right',
+                  down: false,
+                  ...lastPoint.current,
+                })
+              }}
+            >
+              <MousePointer2 data-icon='inline-start' />
+              右键
+            </Button>
+            <Button
+              variant={panel === 'more' ? 'secondary' : 'ghost'}
+              size='sm'
+              aria-expanded={panel === 'more'}
+              onClick={() => openPanel('more')}
+            >
+              <MoreHorizontal data-icon='inline-start' />
+              更多
+            </Button>
+          </div>
+          <p className='text-center text-xs text-muted-foreground'>
+            {touchpad
+              ? '滑动移动 · 轻点单击 · 连点双击'
+              : '点哪里就操作哪里 · 按住可拖拽 · 点左侧切换触控板'}
+          </p>
+        </footer>
+      )}
     </div>,
     document.body
   )
