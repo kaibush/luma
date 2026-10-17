@@ -510,6 +510,17 @@ export function RemoteDashboard() {
                     </p>
                   </CardContent>
                   <CardFooter className='flex flex-col gap-2'>
+                    {host.capabilities.remoteSharing && (
+                      <Button
+                        variant='outline'
+                        className='w-full'
+                        onClick={() => {
+                          location.href = `/shares?host=${encodeURIComponent(host.id)}`
+                        }}
+                      >
+                        分享远程主机
+                      </Button>
+                    )}
                     <Button
                       variant='outline'
                       className='w-full'

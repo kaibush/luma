@@ -1,0 +1,98 @@
+// Isolated service, X11 display and Agent. Never connects to the production API.
+import { createRequire } from 'node:module'
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { spawn } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
+import assert from 'node:assert/strict'
+import { createApp } from '../apps/server/src/server.ts'
+const require = createRequire(new URL('../apps/web/package.json', import.meta.url))
+const { chromium } = require('playwright')
+const temp = mkdtempSync(`${tmpdir()}/remote-share-`)
+const token = randomBytes(32).toString('hex'), hostToken = randomBytes(32).toString('hex')
+const port = 20987, webPort = 20988, base = `http://localhost:${webPort}`
+const app = await createApp({ controlToken: token, hostToken, origins: [base], logger: false })
+const children = []; let browser
+const child = (cmd, args, env = {}) => { const p = spawn(cmd, args, { env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] }); children.push(p); p.stderr.on('data', data => { if (process.env.SMOKE_VERBOSE) process.stderr.write(data) }); return p }
+const waitFor = async (fn, timeout = 60000) => { const end = Date.now()+timeout; while (Date.now()<end) { try { const v = await fn(); if(v) return v } catch {} await new Promise(r=>setTimeout(r,300)) } throw new Error('wait timeout') }
+try {
+  await app.listen({host:'127.0.0.1',port})
+  const xvfb=child('Xvfb',['-displayfd','1','-screen','0','1024x768x24','-nolisten','tcp','-ac'])
+  const display=await new Promise((resolve,reject)=>{xvfb.stdout.once('data', d=>resolve(':'+d.toString().trim()));xvfb.once('error',reject)})
+  child('apps/agent/.venv/bin/python',['apps/agent/main.py'],{DISPLAY:display,HOST_TOKEN:hostToken,HOST_NAME:'工具验收主机',SIGNAL_URL:`ws://127.0.0.1:${port}/ws`,XDG_CONFIG_HOME:temp,RC_TERMINAL:'1',RC_FILES:'1',RC_CLIPBOARD:'1',RC_AUDIO:'0',RC_FILE_ROOT:temp,SHELL:'/bin/sh'})
+  const fixture=child('apps/agent/.venv/bin/python',['apps/agent/input_fixture.py'],{DISPLAY:display,FIXTURE_OUTPUT:`${temp}/events.jsonl`})
+  const metadata=await new Promise((resolve,reject)=>{fixture.stdout.once('data',d=>resolve(JSON.parse(d.toString())));fixture.once('error',reject)})
+  child('node',['node_modules/vite/bin/vite.js','apps/web','--config','apps/web/vite.config.ts','--host','127.0.0.1','--port',String(webPort)],{API_PORT:String(port)})
+  await waitFor(()=>fetch(base).then(r=>r.ok),120000)
+  await waitFor(async()=> (await app.inject({url:'/api/hosts',headers:{authorization:`Bearer ${token}`}})).json().hosts.length)
+  browser=await chromium.launch({headless:true,args:['--no-sandbox']})
+  const context=await browser.newContext({viewport:{width:1000,height:800},acceptDownloads:true})
+  const headers={'X-Remote-Request':'1'}
+  let response=await context.request.post(`${base}/api/auth/setup/unlock`,{headers,data:{key:token}});assert.equal(response.status(),200)
+  response=await context.request.post(`${base}/api/auth/setup/complete`,{headers,data:{username:'testadmin',password:'isolated-test-password',settings:{workspaceName:'工具验收',defaultQuality:'ultrafast',sessionMinutes:15,stunUrl:'',turnUrl:''}}});assert.equal(response.status(),200)
+  const page=await context.newPage(), guestContext=await browser.newContext({viewport:{width:390,height:844}}), guest=await guestContext.newPage();
+  const errors=[]; for(const p of [page,guest]) {p.on('pageerror',e=>errors.push(e.message));p.setDefaultTimeout(45000)}
+  await page.setViewportSize({width:390,height:844})
+  await page.addInitScript(()=>{navigator.mediaDevices.getDisplayMedia=()=>{throw new Error('Mobile manager must never capture local screen')}})
+  await page.goto(`${base}/shares`)
+  await page.getByLabel('共享名称',{exact:true}).fill('手机分享远程')
+  await page.getByLabel('分享码（可选）',{exact:true}).fill('share123')
+  await page.getByRole('button',{name:'创建共享并生成密钥'}).click()
+  await page.getByText('远程分享已创建，请发送链接和分享码；对方无需登录。',{exact:true}).waitFor()
+  const link=await page.getByLabel('分享链接（不含分享码）',{exact:true}).inputValue()
+  assert.equal(new URL(link).hash,'')
+  assert.equal(await page.getByLabel('当前分享码',{exact:true}).inputValue(),'share123')
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth))
+  await guest.goto(link)
+  await guest.getByLabel('分享码',{exact:true}).fill('wrong-code')
+  await guest.getByRole('button',{name:'开始观看 / 重试'}).click()
+  await guest.getByText(/共享链接或密钥无效/).waitFor()
+  await guest.getByLabel('分享码',{exact:true}).fill('share123')
+  await guest.getByRole('button',{name:'开始观看 / 重试'}).click()
+  await guest.getByText('正在观看 · 只读共享',{exact:true}).waitFor()
+  await guest.waitForFunction(()=>document.querySelector('video')?.videoWidth>0)
+  const pixel=await guest.locator('video').evaluate((v,meta)=>{const c=document.createElement('canvas');c.width=v.videoWidth;c.height=v.videoHeight;const x=c.getContext('2d');x.drawImage(v,0,0);return [...x.getImageData(Math.round(150/meta.width*c.width),Math.round(150/meta.height*c.height),1,1).data]},metadata)
+  assert.ok(pixel[2]>pixel[0]+30 && pixel[1]>pixel[0]+15)
+  assert.equal(await guest.getByRole('button',{name:'键盘',exact:true}).count(),0)
+  assert.equal((await guestContext.request.get(`${base}/api/manage/shares`)).status(),401)
+  console.log('PASS: mobile manager creates remote share without capture; anonymous code authentication and actual read-only X11 video')
+  // Normal admin desktop and guest stream coexist.
+  const admin=await context.newPage();await admin.goto(base)
+  await admin.getByRole('button',{name:'连接桌面',exact:true}).click()
+  await admin.getByText('已连接',{exact:true}).waitFor({timeout:45000})
+  await page.getByLabel('分享权限',{exact:true}).selectOption('control')
+  await guest.getByText('分享权限已修改，请重新输入分享码连接',{exact:true}).waitFor()
+  await guest.getByRole('button',{name:'开始观看 / 重试'}).click()
+  await guest.getByText('已连接 · 允许控制',{exact:true}).waitFor()
+  await guest.waitForFunction(()=>document.querySelector('video')?.videoWidth>0)
+  const video=guest.locator('video'), box=await video.boundingBox(), dimensions=await video.evaluate(v=>({w:v.videoWidth,h:v.videoHeight}))
+  const scale=Math.min(box.width/dimensions.w,box.height/dimensions.h)
+  await guest.mouse.click(box.x+(box.width-dimensions.w*scale)/2+300/metadata.width*dimensions.w*scale,box.y+(box.height-dimensions.h*scale)/2+210/metadata.height*dimensions.h*scale)
+  await guest.keyboard.press('a')
+  const events=()=>readFileSync(`${temp}/events.jsonl`,'utf8').trim().split('\n').filter(Boolean).map(JSON.parse)
+  await waitFor(()=>events().some(e=>e.type===2&&e.detail===metadata.keyA),15000)
+  assert.ok(events().some(e=>e.type===4&&e.detail===1))
+  await guest.getByRole('button',{name:'键盘',exact:true}).click()
+  await guest.getByRole('tab',{name:'文字输入',exact:true}).click()
+  await guest.getByLabel('发送文本',{exact:true}).fill('abc')
+  await guest.getByRole('button',{name:'发送',exact:true}).click()
+  await waitFor(()=>events().filter(e=>e.type===2).length>=4,15000)
+  await guest.screenshot({path:'/tmp/remote-console-native-share.png',fullPage:true})
+  await video.focus();await guest.keyboard.down('Control')
+  await waitFor(()=>events().some(e=>e.type===2&&e.detail===metadata.control))
+  await page.getByLabel('分享权限',{exact:true}).selectOption('view')
+  await guest.getByText('分享权限已修改，请重新输入分享码连接',{exact:true}).waitFor()
+  await waitFor(()=>events().some(e=>e.type===3&&e.detail===metadata.control))
+  await guest.getByRole('button',{name:'开始观看 / 重试'}).click()
+  await guest.getByText('正在观看 · 只读共享',{exact:true}).waitFor()
+  await page.getByRole('button',{name:'停止共享',exact:true}).click()
+  await guest.getByText('共享者已停止共享',{exact:true}).waitFor()
+  assert.equal(await admin.getByText('已连接',{exact:true}).count(),1)
+  assert.ok(await admin.locator('video').evaluate(v=>v.srcObject?.active))
+  assert.deepEqual(errors,[])
+  console.log('PASS: guest native mouse/key/mobile keyboard control; permission downgrade releases keys; revoking guest preserves administrator desktop')
+} finally {
+  await browser?.close()
+  for(const p of children) p.kill('SIGTERM')
+  await app.close();rmSync(temp,{recursive:true,force:true})
+}

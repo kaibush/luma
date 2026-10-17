@@ -126,3 +126,39 @@ test('share expiry disconnects viewers and publisher, rejects tickets, and renew
     assert.equal((await join()).statusCode, 403);
   } finally { for (const ws of sockets) ws.terminate(); await app.close(); }
 });
+
+test('remote sharing binds to host and server-side permission, revokes tickets on edits', { timeout: 20000 }, async () => {
+  const app = await createApp({ controlToken, hostToken, origins: [origin], logger: false });
+  const sockets: WebSocket[] = [];
+  try {
+    await app.listen({ host: '127.0.0.1', port: 0 });
+    const base = `ws://127.0.0.1:${(app.server.address() as {port: number}).port}`;
+    const socket = async (path: string) => { const ws = new WebSocket(base + path, {origin}); sockets.push(ws); await once(ws, 'open'); return ws; };
+    const host = await socket('/ws'), registered = message(host);
+    host.send(JSON.stringify({type:'auth',role:'host',token:hostToken,name:'Remote',kind:'linux-x11',features:{terminal:true,files:true,audio:false,clipboard:false,remoteSharing:true}}));
+    const hostId = (await registered).hostId;
+    const headers = await setup(app);
+    const create = await app.inject({method:'POST',url:'/api/manage/shares',headers,payload:{name:'Shared host',hostId,key:'code123',permission:'control'}});
+    assert.equal(create.statusCode,201); const share = create.json().share;
+    assert.equal(share.hostId,hostId); assert.equal(share.permission,'control'); assert.equal(share.key,'code123');
+    const join = () => app.inject({method:'POST',url:`/api/public/shares/${share.id}/join`,payload:{key:'code123',tools:true,readOnly:false}});
+    const first = (await join()).json().ticket, stale = (await join()).json().ticket;
+    const guest = await socket('/share-ws'), offered = message(host), admitted = message(guest);
+    guest.send(JSON.stringify({type:'auth',role:'viewer',ticket:first}));
+    const session = (await admitted).session;
+    assert.equal((await offered).session.id,session.id); assert.equal(session.readOnly,false); assert.equal(session.tools,false);
+    const ready = message(guest); host.send(JSON.stringify({type:'ready',sessionId:session.id})); await ready;
+    const forwarded = message(host); guest.send(JSON.stringify({type:'offer',sessionId:session.id,sdp:'v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n'})); assert.equal((await forwarded).type,'offer');
+    const revoked = message(guest), hostEnd = message(host);
+    assert.equal((await app.inject({method:'POST',url:`/api/manage/shares/${share.id}/permission`,headers,payload:{permission:'view'}})).statusCode,200);
+    assert.match((await revoked).reason,/权限/); assert.equal((await hostEnd).sessionId,session.id);
+    const replay = await socket('/share-ws'), rejected = once(replay,'close'); replay.send(JSON.stringify({type:'auth',role:'viewer',ticket:stale})); assert.equal((await rejected)[0],1008);
+    const guest2 = await socket('/share-ws'), session2 = message(guest2), host2 = message(host);
+    guest2.send(JSON.stringify({type:'auth',role:'viewer',ticket:(await join()).json().ticket,readOnly:false}));
+    const read = (await session2).session; await host2; assert.equal(read.readOnly,true); assert.equal(read.tools,false);
+    const ready2 = message(guest2); host.send(JSON.stringify({type:'ready',sessionId:read.id})); await ready2;
+    const denied = once(guest2,'close'); guest2.send(JSON.stringify({type:'offer',sessionId:read.id,sdp:'v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n'})); assert.equal((await denied)[0],1008);
+    const count = (await app.inject({url:'/api/manage/shares',headers})).json().shares;
+    assert.equal(count[0].key,'code123');
+  } finally { for (const ws of sockets) ws.terminate(); await app.close(); }
+});

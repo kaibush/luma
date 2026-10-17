@@ -11,7 +11,7 @@ export const deviceStatsSchema = z.object({
   platform: z.string().max(160), version: z.string().max(40), encoder: z.string().max(80),
 });
 export type DeviceStats = z.infer<typeof deviceStatsSchema> & { sampledAt: number };
-export const agentFeaturesSchema = z.object({ terminal: z.boolean(), files: z.boolean(), clipboard: z.boolean(), audio: z.boolean() });
+export const agentFeaturesSchema = z.object({ terminal: z.boolean(), files: z.boolean(), clipboard: z.boolean(), audio: z.boolean(), remoteSharing: z.boolean().optional() });
 export const hostMetadataSchema = z.object({ group: z.string().trim().max(60), note: z.string().trim().max(500) });
 export const authSchema = z.discriminatedUnion('role', [
   z.object({ type: z.literal('auth'), role: z.literal('host'), token: z.string().max(256), name: z.string().min(1).max(64), kind: z.enum(['browser', 'linux-x11', 'windows']).default('browser'), deviceId: z.string().uuid().optional(), features: agentFeaturesSchema.optional() }),
@@ -25,13 +25,13 @@ const signalPayloadSchema = z.discriminatedUnion('type', [
 ]);
 export const signalSchema = signalPayloadSchema.and(z.object({ sessionId: z.string().uuid() }));
 export type Signal = z.infer<typeof signalPayloadSchema>;
-export interface Host { id: string; name: string; busy: boolean; kind: 'browser' | 'linux-x11' | 'windows'; capabilities: { video: true; systemInput: boolean; textInput?: 'ascii' | 'unicode' | 'test'; maxFps?: number; terminal?: boolean; files?: boolean; clipboard?: boolean; audio?: boolean }; group?: string; note?: string; lastConnectedAt?: number; stats?: DeviceStats }
-export interface Session { id: string; hostId: string; quality: Quality; expiresAt: number; mode?: 'desktop' | 'tools'; tools?: boolean; audio?: boolean }
+export interface Host { id: string; name: string; busy: boolean; kind: 'browser' | 'linux-x11' | 'windows'; capabilities: { video: true; systemInput: boolean; textInput?: 'ascii' | 'unicode' | 'test'; maxFps?: number; terminal?: boolean; files?: boolean; clipboard?: boolean; audio?: boolean; remoteSharing?: boolean }; group?: string; note?: string; lastConnectedAt?: number; stats?: DeviceStats }
+export interface Session { id: string; hostId: string; quality: Quality; expiresAt: number; mode?: 'desktop' | 'tools'; tools?: boolean; audio?: boolean; readOnly?: boolean }
 export interface IceServer { urls: string | string[]; username?: string; credential?: string }
 export type ServerMessage = Signal
   | { type: 'ready'; hostId?: string; protocol?: number }
   | { type: 'session'; session: Session; iceServers: IceServer[] }
-  | { type: 'ended'; reason: string }
+  | { type: 'ended'; reason: string; sessionId?: string }
   | { type: 'error'; message: string };
 
 // Motion may be dropped. Button/key transitions must use the reliable channel.

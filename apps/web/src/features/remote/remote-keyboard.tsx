@@ -212,7 +212,7 @@ export function RemoteKeyboard({
             <p className='text-xs text-muted-foreground'>
               {asciiOnly
                 ? '支持英文、数字和符号。中文文本输入暂不支持。'
-                : '文字会发送到浏览器共享端的测试面板。'}
+                : '文字会发送到远端当前输入位置，请先选中输入框。'}
             </p>
             {error && (
               <Alert variant='destructive'>

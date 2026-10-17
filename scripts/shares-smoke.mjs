@@ -33,6 +33,7 @@ try{
  await guest.addInitScript(()=>{window.__dataChannels=0;const original=RTCPeerConnection.prototype.createDataChannel;RTCPeerConnection.prototype.createDataChannel=function(...args){window.__dataChannels++;return original.apply(this,args)}})
  const publisher=await owner.newPage(), errors=[];publisher.on('pageerror',e=>errors.push(e.message));publisher.setDefaultTimeout(45000)
  await publisher.goto(`${base}/shares`)
+ await publisher.getByLabel('分享来源',{exact:true}).selectOption('browser')
  await publisher.getByLabel('共享名称',{exact:true}).fill('访客演示')
  await publisher.getByRole('button',{name:'创建共享并生成密钥'}).click()
  const linkInput=publisher.getByLabel('观看链接（包含密钥）',{exact:true})

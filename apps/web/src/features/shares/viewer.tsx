@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
+import { mapPoint, type InputEvent } from '@remote/protocol'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Field, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { sendSignal } from '@/features/remote/api'
 import { RemotePeer, type Telemetry } from '@/features/remote/peer'
+import { RemoteKeyboard } from '@/features/remote/remote-keyboard'
 import { shareSocket } from './connection'
 
 export function ShareViewer({ id }: { id: string }) {
@@ -12,11 +14,15 @@ export function ShareViewer({ id }: { id: string }) {
     () => new URLSearchParams(location.hash.slice(1)).get('key') || ''
   )
   const [name, setName] = useState('屏幕共享'),
-    [status, setStatus] = useState('输入密钥或打开完整观看链接'),
+    [status, setStatus] = useState('输入分享码后连接远程画面'),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
     [connected, setConnected] = useState(false),
     [stats, setStats] = useState<Telemetry>({})
+  const [canControl, setCanControl] = useState(false)
+  const [keyboard, setKeyboard] = useState(false)
+  const [asciiOnly, setAsciiOnly] = useState(true)
+  const pointer = useRef<{ id: number; button: 'left' | 'right' } | null>(null)
   const video = useRef<HTMLVideoElement>(null),
     container = useRef<HTMLDivElement>(null)
   const resource = useRef<{
@@ -27,6 +33,8 @@ export function ShareViewer({ id }: { id: string }) {
   }>({ generation: 0 })
   const stop = () => {
     const r = resource.current
+    r.peer?.sendInput({ type: 'release-all' })
+    pointer.current = null
     r.generation++
     clearTimeout(r.timer)
     const ws = r.ws
@@ -42,6 +50,7 @@ export function ShareViewer({ id }: { id: string }) {
       generation = r.generation
     setBusy(true)
     setConnected(false)
+    setCanControl(false)
     setError('')
     setStatus('正在验证观看链接…')
     try {
@@ -64,9 +73,12 @@ export function ShareViewer({ id }: { id: string }) {
         (message) => {
           if (r.generation !== generation) return
           if (message.type === 'session') {
+            const control = message.session.readOnly === false
+            setCanControl(control)
+            setAsciiOnly(message.textInput !== 'unicode')
             r.peer = new RemotePeer({
               role: 'controller',
-              readOnly: true,
+              readOnly: !control,
               quality: message.session.quality,
               iceServers: message.iceServers,
               signal: (signal) =>
@@ -88,7 +100,9 @@ export function ShareViewer({ id }: { id: string }) {
                   clearTimeout(r.timer)
                   setBusy(false)
                   setConnected(true)
-                  setStatus('正在观看 · 只读共享')
+                  setStatus(
+                    control ? '已连接 · 允许控制' : '正在观看 · 只读共享'
+                  )
                 }
                 if (state === 'failed') {
                   stop()
@@ -158,6 +172,28 @@ export function ShareViewer({ id }: { id: string }) {
       stop()
     }
   }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
+  const send = (event: InputEvent) => {
+    if (connected && canControl) resource.current.peer?.sendInput(event)
+  }
+  const release = () => {
+    resource.current.peer?.sendInput({ type: 'release-all' })
+    pointer.current = null
+  }
+  useEffect(() => {
+    window.addEventListener('blur', release)
+    document.addEventListener('visibilitychange', release)
+    return () => {
+      window.removeEventListener('blur', release)
+      document.removeEventListener('visibilitychange', release)
+    }
+  }, [])
+  const point = (x: number, y: number) => {
+    const v = video.current
+    return (
+      v &&
+      mapPoint(x, y, v.getBoundingClientRect(), v.videoWidth, v.videoHeight)
+    )
+  }
   return (
     <main className='mx-auto flex max-w-6xl flex-col gap-4 p-4'>
       <div className='flex flex-wrap items-center justify-between gap-3'>
@@ -175,7 +211,7 @@ export function ShareViewer({ id }: { id: string }) {
           }}
         >
           <Field>
-            <FieldLabel htmlFor='view-key'>观看密钥</FieldLabel>
+            <FieldLabel htmlFor='view-key'>分享码</FieldLabel>
             <Input
               id='view-key'
               type='password'
@@ -205,7 +241,73 @@ export function ShareViewer({ id }: { id: string }) {
           autoPlay
           playsInline
           muted
-          controls
+          controls={!canControl}
+          tabIndex={canControl ? 0 : undefined}
+          aria-label='共享远程画面'
+          style={{ touchAction: canControl ? 'none' : 'auto' }}
+          onContextMenu={(e) => {
+            if (canControl) e.preventDefault()
+          }}
+          onPointerDown={(e) => {
+            if (!canControl || pointer.current) return
+            const p = point(e.clientX, e.clientY)
+            if (!p) return
+            e.preventDefault()
+            e.currentTarget.focus()
+            e.currentTarget.setPointerCapture(e.pointerId)
+            const button = e.button === 2 ? 'right' : 'left'
+            pointer.current = { id: e.pointerId, button }
+            send({ type: 'button', down: true, button, ...p })
+          }}
+          onPointerMove={(e) => {
+            if (
+              !canControl ||
+              (pointer.current && pointer.current.id !== e.pointerId)
+            )
+              return
+            const p = point(e.clientX, e.clientY)
+            if (p) send({ type: 'move', ...p })
+          }}
+          onPointerUp={(e) => {
+            if (pointer.current?.id !== e.pointerId) return
+            const p = point(e.clientX, e.clientY)
+            if (p)
+              send({
+                type: 'button',
+                down: false,
+                button: pointer.current.button,
+                ...p,
+              })
+            release()
+          }}
+          onPointerCancel={release}
+          onLostPointerCapture={release}
+          onBlur={release}
+          onWheel={(e) => {
+            if (canControl)
+              send({
+                type: 'wheel',
+                dx: Math.max(-2000, Math.min(2000, e.deltaX)),
+                dy: Math.max(-2000, Math.min(2000, e.deltaY)),
+              })
+          }}
+          onKeyDown={(e) => {
+            if (
+              canControl &&
+              !e.repeat &&
+              !e.nativeEvent.isComposing &&
+              e.code !== 'Escape'
+            ) {
+              e.preventDefault()
+              send({ type: 'key', code: e.code, down: true })
+            }
+          }}
+          onKeyUp={(e) => {
+            if (canControl && e.code !== 'Escape') {
+              e.preventDefault()
+              send({ type: 'key', code: e.code, down: false })
+            }
+          }}
           className='aspect-video w-full object-contain'
         />
         {connected && (
@@ -216,7 +318,12 @@ export function ShareViewer({ id }: { id: string }) {
         )}
       </div>
       {connected && (
-        <div className='flex gap-2'>
+        <div className='flex flex-wrap gap-2'>
+          {canControl && (
+            <Button variant='outline' onClick={() => setKeyboard(!keyboard)}>
+              键盘
+            </Button>
+          )}
           <Button
             variant='outline'
             onClick={() => {
@@ -241,8 +348,19 @@ export function ShareViewer({ id }: { id: string }) {
           </Button>
         </div>
       )}
+      {connected && canControl && keyboard && (
+        <RemoteKeyboard
+          send={send}
+          asciiOnly={asciiOnly}
+          onClose={() => {
+            release()
+            setKeyboard(false)
+          }}
+        />
+      )}
       <p className='text-sm text-muted-foreground'>
-        无需登录 · 仅观看画面 · 共享者可随时停止或更换密钥
+        无需登录 · {canControl ? '允许控制远程桌面' : '仅观看画面'} ·
+        共享者可随时停止或更换分享码
       </p>
     </main>
   )

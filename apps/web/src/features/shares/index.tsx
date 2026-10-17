@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { Host } from '@remote/protocol'
 import { Copy, Monitor, Square, Trash2 } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -39,7 +40,9 @@ function ShareCard({
   onStart,
   onAction,
   onExpiry,
+  onPermission,
 }: {
+  onPermission: (permission: 'view' | 'control') => void
   onExpiry: (expiresAt: number | null) => void
   share: Share
   pending: boolean
@@ -68,15 +71,51 @@ function ShareCard({
                 ? '已停止'
                 : share.online
                   ? `${share.viewers} 人观看`
-                  : '等待开始共享'}
+                  : share.hostId
+                    ? '远程主机离线'
+                    : '等待开始共享'}
           </Badge>
         </div>
         <CardDescription>
-          访客只读观看 · 最多同时 3 人 · 无需登录
+          {share.permission === 'control' ? '允许控制远程桌面' : '仅观看'} ·
+          最多同时 3 人 · 无需登录
         </CardDescription>
       </CardHeader>
       <CardContent>
         <FieldGroup>
+          {share.hostId && (
+            <>
+              <Field>
+                <FieldLabel htmlFor={`permission-${share.id}`}>
+                  分享权限
+                </FieldLabel>
+                <select
+                  id={`permission-${share.id}`}
+                  className='h-10 w-full rounded-md border bg-background px-3'
+                  value={share.permission}
+                  disabled={pending}
+                  onChange={(e) =>
+                    onPermission(e.target.value as 'view' | 'control')
+                  }
+                >
+                  <option value='view'>仅观看</option>
+                  <option value='control'>允许控制</option>
+                </select>
+                <FieldDescription>
+                  修改立即保存，并断开已有访客；重新输入分享码后使用新权限。
+                </FieldDescription>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor={`code-${share.id}`}>当前分享码</FieldLabel>
+                <Input
+                  id={`code-${share.id}`}
+                  readOnly
+                  value={share.key}
+                  onFocus={(e) => e.target.select()}
+                />
+              </Field>
+            </>
+          )}
           <Field>
             <FieldLabel htmlFor={`expiry-${share.id}`}>
               授权码到期时间
@@ -103,7 +142,7 @@ function ShareCard({
           </Button>
           <Field>
             <FieldLabel htmlFor={`link-${share.id}`}>
-              观看链接（包含密钥）
+              {share.hostId ? '分享链接（不含分享码）' : '观看链接（包含密钥）'}
             </FieldLabel>
             <Input
               id={`link-${share.id}`}
@@ -112,7 +151,7 @@ function ShareCard({
               onFocus={(e) => e.target.select()}
             />
             <FieldDescription>
-              复制整个链接发给观看者。停止、更换密钥或删除后，已有观看会话会断开。
+              远程分享请分别发送链接和分享码。停止、更换密钥或删除后，已有会话会断开。
             </FieldDescription>
           </Field>
           <Button
@@ -137,23 +176,33 @@ function ShareCard({
               onChange={(e) => setKey(e.target.value)}
               type='password'
               autoComplete='new-password'
-              minLength={16}
+              minLength={6}
               maxLength={128}
               placeholder='留空则自动生成随机密钥'
             />
             <FieldDescription>
-              自定义密钥为 16–128 个字符。更换后请重新复制链接。
+              自定义分享码为 6–128 个字符。更换后请重新复制链接。
             </FieldDescription>
           </Field>
         </FieldGroup>
       </CardContent>
       <CardFooter className='flex flex-wrap gap-2'>
         <Button
-          disabled={pending || capturing || share.online || isExpired}
+          disabled={
+            pending ||
+            isExpired ||
+            (share.hostId ? share.enabled : capturing || share.online)
+          }
           onClick={onStart}
         >
           <Monitor data-icon='inline-start' />
-          {share.enabled ? '选择屏幕并开始' : '重新开启并选择屏幕'}
+          {share.hostId
+            ? share.enabled
+              ? '远程分享已开启'
+              : '重新开启远程分享'
+            : share.enabled
+              ? '选择屏幕并开始'
+              : '重新开启并选择屏幕'}
         </Button>
         <Button
           variant='outline'
@@ -190,6 +239,13 @@ export function ScreenShares() {
   const [shares, setShares] = useState<Share[]>([]),
     [name, setName] = useState('我的屏幕'),
     [expiry, setExpiry] = useState('')
+  const [hosts, setHosts] = useState<Host[]>([])
+  const [sourceType, setSourceType] = useState('remote')
+  const [hostId, setHostId] = useState(
+    new URLSearchParams(location.search).get('host') || ''
+  )
+  const [createKey, setCreateKey] = useState('')
+  const [permission, setPermission] = useState<'view' | 'control'>('view')
   const [error, setError] = useState(''),
     [status, setStatus] = useState(''),
     [pending, setPending] = useState(false),
@@ -204,8 +260,14 @@ export function ScreenShares() {
   }>({ generation: 0, peers: new Map() })
   const mounted = useRef(true)
   const refresh = async () => {
-    const result = await api<{ shares: Share[] }>('/manage/shares', '')
-    if (mounted.current) setShares(result.shares)
+    const [result, devices] = await Promise.all([
+      api<{ shares: Share[] }>('/manage/shares', ''),
+      api<{ hosts: Host[] }>('/hosts', ''),
+    ])
+    if (mounted.current) {
+      setShares(result.shares)
+      setHosts(devices.hosts.filter((h) => h.capabilities.remoteSharing))
+    }
   }
   const stopCapture = () => {
     const r = source.current
@@ -271,6 +333,19 @@ export function ScreenShares() {
   }
   const start = async (share: Share) => {
     setError('')
+    if (share.hostId) {
+      setPending(true)
+      try {
+        await api(`/manage/shares/${share.id}/enable`, '', { method: 'POST' })
+        await refresh()
+        setStatus('远程分享已开启，请复制新链接和分享码发给对方。')
+      } catch (e) {
+        setError((e as Error).message)
+      } finally {
+        setPending(false)
+      }
+      return
+    }
     if (!window.isSecureContext) {
       setError('请通过 HTTPS 打开此页后共享屏幕。')
       return
@@ -393,15 +468,14 @@ export function ScreenShares() {
         <div>
           <h1 className='text-2xl font-semibold'>屏幕共享</h1>
           <p className='mt-2 text-muted-foreground'>
-            创建共享 → 选择屏幕 → 把带密钥的 HTTPS 链接发给对方。
+            选择远程主机 → 设置分享码和权限 → 发送链接，对方输入分享码即可连接。
           </p>
         </div>
         <Alert>
           <Monitor />
-          <AlertTitle>访客无需登录，只能观看</AlertTitle>
+          <AlertTitle>手机也能分享远程主机</AlertTitle>
           <AlertDescription>
-            在电脑 Chrome 或 Edge
-            中选择要共享的画面，并保持本页打开。观看者可使用电脑或手机。你可以随时更换密钥、停止或删除共享。
+            远程分享直接连接已接入的电脑，无需手机采集屏幕，也无需保持本页打开。仅观看或允许控制由你设置；终端和文件不向访客开放。
           </AlertDescription>
         </Alert>
         <form
@@ -410,15 +484,27 @@ export function ScreenShares() {
             setPending(true)
             setError('')
             try {
+              if (sourceType === 'remote' && !(hostId || hosts[0]?.id))
+                throw new Error('没有可分享的在线主机，请更新并连接客户端')
               await api('/manage/shares', '', {
                 method: 'POST',
                 body: JSON.stringify({
                   name,
+                  hostId:
+                    sourceType === 'remote'
+                      ? hostId || hosts[0]?.id
+                      : undefined,
+                  permission: sourceType === 'remote' ? permission : 'view',
+                  key: createKey || undefined,
                   expiresAt: expiry ? new Date(expiry).getTime() : null,
                 }),
               })
               await refresh()
-              setStatus('共享已创建，点击「选择屏幕并开始」后即可观看。')
+              setStatus(
+                sourceType === 'remote'
+                  ? '远程分享已创建，请发送链接和分享码；对方无需登录。'
+                  : '共享已创建，点击「选择屏幕并开始」后即可观看。'
+              )
             } catch (e) {
               setError((e as Error).message)
             } finally {
@@ -427,6 +513,65 @@ export function ScreenShares() {
           }}
         >
           <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor='share-source'>分享来源</FieldLabel>
+              <select
+                id='share-source'
+                className='h-10 w-full rounded-md border bg-background px-3'
+                value={sourceType}
+                onChange={(e) => setSourceType(e.target.value)}
+              >
+                <option value='remote'>已接入的远程主机</option>
+                <option value='browser'>当前电脑的浏览器屏幕</option>
+              </select>
+            </Field>
+            {sourceType === 'remote' && (
+              <>
+                <Field>
+                  <FieldLabel htmlFor='share-host'>远程主机</FieldLabel>
+                  <select
+                    id='share-host'
+                    className='h-10 w-full rounded-md border bg-background px-3'
+                    value={hostId || hosts[0]?.id || ''}
+                    onChange={(e) => setHostId(e.target.value)}
+                  >
+                    {!hosts.length && (
+                      <option value=''>暂无支持分享的在线主机</option>
+                    )}
+                    {hosts.map((h) => (
+                      <option key={h.id} value={h.id}>
+                        {h.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor='create-permission'>访客权限</FieldLabel>
+                  <select
+                    id='create-permission'
+                    className='h-10 w-full rounded-md border bg-background px-3'
+                    value={permission}
+                    onChange={(e) =>
+                      setPermission(e.target.value as 'view' | 'control')
+                    }
+                  >
+                    <option value='view'>仅观看</option>
+                    <option value='control'>允许控制</option>
+                  </select>
+                </Field>
+              </>
+            )}
+            <Field>
+              <FieldLabel htmlFor='create-code'>分享码（可选）</FieldLabel>
+              <Input
+                id='create-code'
+                value={createKey}
+                onChange={(e) => setCreateKey(e.target.value)}
+                minLength={6}
+                maxLength={128}
+                placeholder='留空自动随机生成，或输入至少 6 位分享码'
+              />
+            </Field>
             <Field>
               <FieldLabel htmlFor='share-name'>共享名称</FieldLabel>
               <Input
@@ -497,6 +642,22 @@ export function ScreenShares() {
               capturing={!!active}
               onStart={() => void start(share)}
               onAction={(...args) => void action(...args)}
+              onPermission={async (permission) => {
+                setPending(true)
+                setError('')
+                try {
+                  await api(`/manage/shares/${share.id}/permission`, '', {
+                    method: 'POST',
+                    body: JSON.stringify({ permission }),
+                  })
+                  await refresh()
+                  setStatus('分享权限已更新，已有访客已断开，重新连接后生效。')
+                } catch (e) {
+                  setError((e as Error).message)
+                } finally {
+                  setPending(false)
+                }
+              }}
               onExpiry={async (expiresAt) => {
                 setPending(true)
                 setError('')

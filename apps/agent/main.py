@@ -32,6 +32,7 @@ log.setLevel(logging.INFO)
 
 class Agent:
     def __init__(self):
+        self.children = {}
         self.tools = None
         self.audio = None
         self.pc = None
@@ -77,7 +78,8 @@ class Agent:
         await self.stop_session()
         log.info('正在建立远程桌面会话')
         desktop = message['session'].get('mode', 'desktop') == 'desktop'
-        self.input = DesktopInput() if desktop else None
+        read_only = message['session'].get('readOnly', False)
+        self.input = DesktopInput() if desktop and not read_only else None
         self.session = message['session']['id']
         self.track = DesktopVideo(message['session']['quality']) if desktop else None
         ice = [RTCIceServer(**server) for server in message['iceServers']]
@@ -99,6 +101,8 @@ class Agent:
 
         @pc.on('datachannel')
         def channel_open(channel):
+            if read_only:
+                channel.close(); return
             if channel.label == 'tools' and not self.tools and message['session'].get('tools'):
                 self.tools = HostTools(channel, features()); return
             if channel.label not in ('input', 'motion') or not desktop:
@@ -169,11 +173,11 @@ class Agent:
                 async with websockets.connect(os.environ.get('SIGNAL_URL', 'ws://127.0.0.1:8798/ws'), max_size=65536, ping_interval=20, open_timeout=10) as ws:
                     self.ws = ws
                     self.protocol = 0
-                    await self.send({'type': 'auth', 'role': 'host', 'token': os.environ['HOST_TOKEN'], 'name': os.environ.get('HOST_NAME', '本机 Linux 桌面'), 'kind': 'windows' if sys.platform == 'win32' else 'linux-x11', 'deviceId': device_id(), 'features': features()})
+                    await self.send({'type': 'auth', 'role': 'host', 'token': os.environ['HOST_TOKEN'], 'name': os.environ.get('HOST_NAME', '本机 Linux 桌面'), 'kind': 'windows' if sys.platform == 'win32' else 'linux-x11', 'deviceId': device_id(), 'features': {**features(), 'remoteSharing': True}})
                     async def report_stats():
                         while True:
                             if self.protocol >= 2:
-                                stats = await asyncio.to_thread(device_stats, media.ENCODER if self.track else 'idle')
+                                stats = await asyncio.to_thread(device_stats, media.ENCODER if self.track or any(c.track for c in self.children.values()) else 'idle')
                                 await ws.send(json.dumps(dict(type='stats', stats=stats)))
                             await asyncio.sleep(5)
                     reporter = asyncio.create_task(report_stats())
@@ -186,6 +190,8 @@ class Agent:
             except Exception as error:
                 log.warning('连接断开，正在重试；请检查网络、主机密钥和桌面会话 (%s)', type(error).__name__)
             finally:
+                for child in list(self.children.values()): await child.stop_session()
+                self.children.clear()
                 await self.stop_session()
             await asyncio.sleep(self.retry)
             self.retry = min(self.retry * 2, 15)
@@ -199,21 +205,48 @@ class Agent:
                 self.retry = 1
                 log.info('在线，等待远程连接')
             elif kind == 'session':
-                await self.start_session(message)
+                sid = message['session']['id']
+                if sid in self.children: continue
+                if len(self.children) >= 4:
+                    await self.send({'type': 'end', 'sessionId': sid}); continue
+                child = Agent(); child.ws = ws
+                self.children[sid] = child
+                try: await child.start_session(message)
+                except Exception:
+                    self.children.pop(sid, None)
+                    await child.stop_session()
+                    await self.send({'type': 'end', 'sessionId': sid})
             elif kind in ('ended', 'end'):
-                await self.stop_session()
-            elif self.pc and message.get('sessionId') == self.session:
-                if kind == 'offer':
-                    await self.pc.setRemoteDescription(RTCSessionDescription(sdp=message['sdp'], type='offer'))
-                    answer = await self.pc.createAnswer()
-                    await self.pc.setLocalDescription(answer)
-                    await self.send({'type': 'answer', 'sessionId': self.session, 'sdp': self.pc.localDescription.sdp})
-                elif kind == 'ice' and message['candidate'].get('candidate'):
-                    raw_candidate = message['candidate']
-                    candidate = candidate_from_sdp(raw_candidate['candidate'].removeprefix('candidate:'))
-                    candidate.sdpMid = raw_candidate.get('sdpMid')
-                    candidate.sdpMLineIndex = raw_candidate.get('sdpMLineIndex')
-                    await self.pc.addIceCandidate(candidate)
+                sid = message.get('sessionId')
+                targets = [sid] if sid else list(self.children)
+                for target in targets:
+                    child = self.children.pop(target, None)
+                    if child: await child.stop_session()
+            else:
+                child = self.children.get(message.get('sessionId'))
+                if child and child.pc:
+                    try: await child.handle_signal(message)
+                    except Exception:
+                        # An untrusted guest's malformed SDP must not reset other sessions.
+                        sid = message.get('sessionId')
+                        self.children.pop(sid, None)
+                        await child.stop_session()
+                        await self.send({'type': 'end', 'sessionId': sid})
+
+    async def handle_signal(self, message):
+        kind = message['type']
+        if kind == 'offer':
+            await self.pc.setRemoteDescription(RTCSessionDescription(sdp=message['sdp'], type='offer'))
+            answer = await self.pc.createAnswer()
+            await self.pc.setLocalDescription(answer)
+            await self.send({'type': 'answer', 'sessionId': self.session, 'sdp': self.pc.localDescription.sdp})
+        elif kind == 'ice' and message['candidate'].get('candidate'):
+            raw_candidate = message['candidate']
+            candidate = candidate_from_sdp(raw_candidate['candidate'].removeprefix('candidate:'))
+            candidate.sdpMid = raw_candidate.get('sdpMid')
+            candidate.sdpMLineIndex = raw_candidate.get('sdpMLineIndex')
+            await self.pc.addIceCandidate(candidate)
+
 
 
 async def main():

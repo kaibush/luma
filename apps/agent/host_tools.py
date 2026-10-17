@@ -17,7 +17,7 @@ import time
 import psutil
 import pyperclip
 
-VERSION = '0.2.0'
+VERSION = '0.3.0'
 CHUNK = 12 * 1024
 MAX_FILE = 256 * 1024 * 1024
 

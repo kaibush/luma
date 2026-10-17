@@ -40,14 +40,14 @@ export async function createApp(config: Config) {
     const s = sessions.get(id); if (!s) return;
     sessions.delete(id);
     const host = hosts.get(s.info.hostId);
-    if (host) { host.info.busy = false; send(host.ws, { type: 'ended', reason }); }
+    if (host) { host.info.busy = false; send(host.ws, { type: 'ended', reason, sessionId: id }); }
     send(s.controller, { type: 'ended', reason });
     s.controller?.close(1000, reason);
   };
   registerAdmin(app, store, config, principal => {
     for (const [ws, auth] of principals) if (principal ? auth.kind === principal.kind && auth.id === principal.id : auth.kind === 'session') ws.close(1008, 'Authorization revoked');
   }, () => [...sessions.values()].map(s => ({ ...s.info, hostName: hosts.get(s.info.hostId)?.info.name || '离线主机', connected: !!s.controller })));
-  registerShares(app, store, config.origins, iceServers);
+  const shares = registerShares(app, store, config.origins, iceServers, hosts);
   app.get('/health', async () => ({ ok: true }));
   app.get('/api/hosts', async () => ({ hosts: [...hosts.values()].map(h => h.info) }));
   app.put<{ Params: { id: string } }>('/api/hosts/:id', async (req, reply) => {
@@ -125,6 +125,7 @@ export async function createApp(config: Config) {
         if (stats.success && host) host.info.stats = { ...stats.data, sampledAt: Date.now() };
         return;
       }
+      if (role === 'host' && shares.fromHost(hostId!, data)) return;
       const parsed = signalSchema.safeParse(data);
       // A host acknowledges setup using ready, outside SDP/ICE signals.
       if (role === 'host' && typeof data === 'object' && data !== null && 'type' in data && data.type === 'ready') {
@@ -144,7 +145,7 @@ export async function createApp(config: Config) {
     ws.on('close', () => {
       principals.delete(ws);
       clearTimeout(timeout); clearInterval(heartbeat);
-      if (hostId) { const s = [...sessions.values()].find(s => s.info.hostId === hostId); hosts.delete(hostId); if (s) end(s.info.id, '主机已离线'); }
+      if (hostId) { const s = [...sessions.values()].find(s => s.info.hostId === hostId); hosts.delete(hostId); shares.offline(hostId); if (s) end(s.info.id, '主机已离线'); }
       if (sessionId) end(sessionId, '控制端已断开');
     });
   });

@@ -1,6 +1,8 @@
 import type { ServerMessage } from '@remote/protocol'
 
 export type Share = {
+  hostId: string | null
+  permission: 'view' | 'control'
   id: string
   name: string
   key: string
@@ -10,9 +12,12 @@ export type Share = {
   expiresAt: number | null
   createdAt: number
 }
-export type ShareMessage = ServerMessage & { sessionId?: string }
+export type ShareMessage = ServerMessage & {
+  sessionId?: string
+  textInput?: string
+}
 export function shareLink(share: Share) {
-  return `${location.origin}/share/${share.id}#key=${encodeURIComponent(share.key)}`
+  return `${location.origin}/share/${share.id}${share.hostId ? '' : `#key=${encodeURIComponent(share.key)}`}`
 }
 export function shareSocket(
   auth: object,
