@@ -23,6 +23,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { api, sendSignal, signaling } from './api'
 import { canFullscreen, enterDisplayMode } from './display-mode'
+import { ImmersiveHandle } from './immersive-handle'
 import { RemotePeer, type Telemetry } from './peer'
 import { RemoteKeyboard, sendChord } from './remote-keyboard'
 import { moveTouch, isTap, type TouchGesture } from './touchpad'
@@ -269,7 +270,9 @@ export function Viewer({
     const result = await enterDisplayMode(container.current!)
     setImmersive(true)
     setDisplayHint(
-      result === 'immersive' ? '已进入沉浸模式，点「显示工具」可恢复。' : ''
+      result === 'immersive'
+        ? '已进入沉浸模式。点边缘小按钮恢复工具，按住可拖动移位。'
+        : ''
     )
   }
   const openPanel = (next: 'keyboard' | 'more') => {
@@ -343,25 +346,22 @@ export function Viewer({
         onContextMenu={(e) => e.preventDefault()}
       >
         {immersive && (
-          <div className='pointer-events-none absolute end-2 top-2 z-10 flex max-w-[85%] flex-col items-end gap-2'>
-            <Button
-              variant='secondary'
-              size='sm'
-              className='pointer-events-auto'
-              onClick={() => {
+          <>
+            <ImmersiveHandle
+              onRestore={() => {
                 setImmersive(false)
                 setDisplayHint('')
               }}
-            >
-              <Minimize data-icon='inline-start' />
-              显示工具
-            </Button>
+            />
             {displayHint && (
-              <Alert role='status' className='pointer-events-none max-w-xs'>
+              <Alert
+                role='status'
+                className='pointer-events-none absolute end-10 top-2 z-10 max-w-[min(18rem,75%)]'
+              >
                 <AlertDescription>{displayHint}</AlertDescription>
               </Alert>
             )}
-          </div>
+          </>
         )}
         <video
           ref={video}

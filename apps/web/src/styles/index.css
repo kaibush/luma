@@ -224,3 +224,31 @@
   min-width: 0;
   white-space: normal;
 }
+
+.remote-viewer .remote-tool-handle {
+  position: absolute;
+  z-index: 10;
+  width: 28px;
+  min-width: 28px;
+  height: 48px;
+  padding: 0;
+  border-radius: 10px;
+  touch-action: none;
+  user-select: none;
+  opacity: 0.35;
+  transition: opacity 160ms;
+}
+.remote-tool-handle[data-active='true'],
+.remote-tool-handle:focus-visible {
+  opacity: 1;
+}
+@media (hover: hover) {
+  .remote-tool-handle:hover {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .remote-viewer .remote-tool-handle {
+    transition: none;
+  }
+}
