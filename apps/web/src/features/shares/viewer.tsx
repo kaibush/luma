@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Field, FieldLabel } from '@/components/ui/field'
 import { PasswordInput } from '@/components/password-input'
 import { sendSignal } from '@/features/remote/api'
+import { ConnectionStatusBar } from '@/features/remote/connection-status-bar'
 import { enterDisplayMode } from '@/features/remote/display-mode'
 import { ImmersiveHandle } from '@/features/remote/immersive-handle'
 import { RemotePeer, type Telemetry } from '@/features/remote/peer'
@@ -303,6 +304,7 @@ export function ShareViewer({ id }: { id: string }) {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
+      {connected && immersive && <ConnectionStatusBar stats={stats} />}
       <div
         className={
           immersive
@@ -397,7 +399,6 @@ export function ShareViewer({ id }: { id: string }) {
       </div>
       {connected && immersive && (
         <ImmersiveHandle
-          stats={stats}
           onRestore={exitDisplay}
           onKeyboard={
             canControl

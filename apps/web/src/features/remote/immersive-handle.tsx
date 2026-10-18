@@ -8,13 +8,11 @@ export function ImmersiveHandle({
   onKeyboard,
   onLeave,
   leaveLabel = '结束会话',
-  stats,
 }: {
   onRestore: () => void
   onKeyboard?: () => void
   onLeave?: () => void
   leaveLabel?: string
-  stats?: { fps?: number; rttMs?: number }
 }) {
   const [open, setOpen] = useState(false)
   useEffect(() => {
@@ -121,19 +119,6 @@ export function ImmersiveHandle({
             top: `max(8px, calc((100% - 220px) * ${dock.y}))`,
           }}
         >
-          {stats && (
-            <div
-              aria-label='实时连接统计，延迟为网络往返时间 RTT'
-              className='flex flex-col gap-1 border-b px-2 py-2 text-xs text-muted-foreground tabular-nums'
-            >
-              <span>
-                {stats.fps === undefined ? '—' : Math.round(stats.fps)} FPS
-              </span>
-              <span>
-                延迟 {stats.rttMs === undefined ? '—' : Math.round(stats.rttMs)} ms
-              </span>
-            </div>
-          )}
           {onKeyboard && (
             <Button
               variant='ghost'

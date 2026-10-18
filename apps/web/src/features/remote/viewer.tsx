@@ -23,6 +23,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { api, sendSignal, signaling } from './api'
 import { ClipboardPanel } from './clipboard-panel'
+import { ConnectionStatusBar } from './connection-status-bar'
 import { canFullscreen, enterDisplayMode } from './display-mode'
 import { ImmersiveHandle } from './immersive-handle'
 import { RemotePeer, type Telemetry } from './peer'
@@ -385,6 +386,9 @@ export function Viewer({
           </Button>
         </header>
       )}
+      {state === 'connected' && (immersive || nativeFullscreen) && (
+        <ConnectionStatusBar stats={stats} />
+      )}
       <div
         className='remote-stage bg-muted'
         onContextMenu={(e) => e.preventDefault()}
@@ -392,7 +396,6 @@ export function Viewer({
         {immersive && (
           <>
             <ImmersiveHandle
-              stats={state === 'connected' ? stats : undefined}
               onKeyboard={() => {
                 setImmersive(false)
                 setDisplayHint('')
