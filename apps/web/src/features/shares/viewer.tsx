@@ -388,7 +388,7 @@ export function ShareViewer({ id }: { id: string }) {
               : 'aspect-video w-full object-contain'
           }
         />
-        {connected && (
+        {connected && !immersive && (
           <div className='pointer-events-none absolute start-2 top-2 rounded-lg bg-foreground/90 px-3 py-2 text-sm font-semibold text-background tabular-nums'>
             {stats.fps === undefined ? '—' : Math.round(stats.fps)} FPS · 延迟{' '}
             {stats.rttMs === undefined ? '—' : Math.round(stats.rttMs)} ms
@@ -397,6 +397,7 @@ export function ShareViewer({ id }: { id: string }) {
       </div>
       {connected && immersive && (
         <ImmersiveHandle
+          stats={stats}
           onRestore={exitDisplay}
           onKeyboard={
             canControl

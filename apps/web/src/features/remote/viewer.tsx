@@ -392,6 +392,7 @@ export function Viewer({
         {immersive && (
           <>
             <ImmersiveHandle
+              stats={state === 'connected' ? stats : undefined}
               onKeyboard={() => {
                 setImmersive(false)
                 setDisplayHint('')
@@ -539,7 +540,7 @@ export function Viewer({
             })
           }}
         />
-        {state === 'connected' && (
+        {state === 'connected' && !immersive && !nativeFullscreen && (
           <div
             aria-label='实时连接统计，延迟为网络往返时间 RTT'
             className='pointer-events-none absolute start-2 top-2 flex items-center gap-3 rounded-lg border border-background/20 bg-foreground/90 px-3 py-2 text-sm font-semibold text-background tabular-nums shadow-md select-none'
