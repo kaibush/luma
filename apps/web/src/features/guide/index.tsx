@@ -42,6 +42,32 @@ export function GuidePage({ topic }: { topic?: string }) {
             </Button>
           )}
         </div>
+        <nav
+          aria-label='指南主题'
+          className='flex flex-wrap gap-1 rounded-xl bg-muted p-1'
+        >
+          <Button size='sm' variant={!article ? 'secondary' : 'ghost'} asChild>
+            <Link to='/guide' aria-current={!article ? 'page' : undefined}>
+              快速开始
+            </Link>
+          </Button>
+          {guides.map((g) => (
+            <Button
+              key={g.id}
+              size='sm'
+              variant={topic === g.id ? 'secondary' : 'ghost'}
+              asChild
+            >
+              <Link
+                to='/guide/$topic'
+                params={{ topic: g.id }}
+                aria-current={topic === g.id ? 'page' : undefined}
+              >
+                {g.title}
+              </Link>
+            </Button>
+          ))}
+        </nav>
         {!article ? (
           <>
             <section className='rounded-xl border bg-muted/40 p-5'>

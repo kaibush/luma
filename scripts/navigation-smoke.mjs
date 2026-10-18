@@ -80,102 +80,54 @@ try {
     p.on("pageerror", (e) => errors.push(e.message));
   }
   await publicPage.goto(`${base}/guide/install`);
-  await publicPage
-    .getByRole("heading", { name: "客户端接入", exact: true })
-    .waitFor();
-  assert.ok(publicPage.url().endsWith("/guide/install"));
-  assert.equal(
-    (await guest.request.get(`${base}/api/manage/tokens`)).status(),
-    401,
-  );
-  await publicPage
-    .getByRole("button", { name: "Toggle Sidebar", exact: true })
-    .click();
-  const drawer = publicPage.getByRole("dialog");
-  await drawer.getByRole("link", { name: "终端与文件", exact: true }).click();
-  await publicPage
-    .getByRole("heading", { name: "终端与文件", exact: true })
-    .waitFor();
-  await drawer.waitFor({ state: "hidden" });
-  assert.ok(
-    await publicPage.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  );
-  await publicPage
-    .getByRole("button", { name: "Toggle Sidebar", exact: true })
-    .click();
+  await publicPage.getByRole('heading', {name:'客户端接入', exact:true}).waitFor();
+  assert.equal((await guest.request.get(`${base}/api/manage/tokens`)).status(),401);
+  await publicPage.locator('[data-sidebar="trigger"]').click();
+  const drawer=publicPage.getByRole('dialog');
+  for (const name of ['我的主机','接入此电脑','屏幕共享','系统管理','使用指南'])
+    await drawer.getByRole('link',{name,exact:true}).waitFor();
+  assert.equal(await drawer.locator('[data-sidebar="menu-sub"]').count(),0);
   await publicPage.waitForTimeout(350);
-  await publicPage.screenshot({
-    path: "/tmp/remote-console-grouped-sidebar-mobile.png",
-    fullPage: false,
-  });
-  await publicPage
-    .getByRole("dialog")
-    .getByRole("link", { name: "快速开始", exact: true })
-    .click();
-  await publicPage.getByLabel("搜索使用指南", { exact: true }).fill("文件");
-  await publicPage.locator('main a[href="/guide/tools"]').waitFor();
-  console.log(
-    "PASS: public guides require no login; mobile grouped navigation closes after selection and fits viewport",
-  );
+  await publicPage.screenshot({path:'/tmp/remote-console-page-sidebar-mobile.png'});
+  await drawer.getByRole('link',{name:'使用指南',exact:true}).click();
+  await drawer.waitFor({state:'hidden'});
+  await publicPage.getByRole('navigation',{name:'指南主题'}).getByRole('link',{name:'终端与文件',exact:true}).click();
+  await publicPage.getByRole('heading',{name:'终端与文件',exact:true}).waitFor();
+  assert.ok(await publicPage.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  console.log('PASS: mobile drawer contains full-page links, closes on navigation; guide topics switch inside page');
   await page.goto(`${base}/management/tokens`);
-  await page.getByText("已有 Token", { exact: true }).waitFor();
-  await page.getByLabel("名称", { exact: true }).fill("导航测试主机");
-  await page.getByRole("button", { name: "创建 Token", exact: true }).click();
-  await page.getByRole("row").filter({ hasText: "导航测试主机" }).waitFor();
-  const sidebar = page.locator('[data-sidebar="sidebar"]').first();
-  await sidebar
-    .getByRole("link", { name: "Token 管理", exact: true })
-    .waitFor();
-  assert.equal(
-    await sidebar
-      .getByRole("link", { name: "Token 管理", exact: true })
-      .getAttribute("data-active"),
-    "true",
-  );
-  await page.getByRole("tab", { name: "账号安全", exact: true }).click();
+  await page.getByText('已有 Token',{exact:true}).waitFor();
+  const sidebar=page.locator('[data-sidebar="sidebar"]').first();
+  assert.equal(await sidebar.getByRole('link',{name:'系统管理',exact:true}).getAttribute('data-active'),'true');
+  assert.equal(await sidebar.getByRole('link',{name:'Token 管理',exact:true}).count(),0);
+  await page.getByLabel('名称',{exact:true}).fill('导航测试主机');
+  await page.getByRole('button',{name:'创建 Token',exact:true}).click();
+  await page.getByRole('row').filter({hasText:'导航测试主机'}).waitFor();
+  await page.getByRole('tab',{name:'账号安全',exact:true}).click();
   await page.waitForURL(`${base}/management/account`);
   await page.reload();
-  await page.getByLabel("当前密码", { exact: true }).waitFor();
-  await sidebar.getByRole("link", { name: "连接设置", exact: true }).click();
-  await page.waitForURL(/\/management\/?$/);
-  await page.getByLabel("工作空间名称", { exact: true }).waitFor();
-  await sidebar.getByRole("link", { name: "Token 管理", exact: true }).click();
-  const tokenRow = page.getByRole("row").filter({ hasText: "导航测试主机" });
-  await tokenRow.getByRole("button", { name: "撤销", exact: true }).click();
-  await page.getByRole("button", { name: "确认撤销", exact: true }).click();
-  await tokenRow.getByText("已撤销", { exact: true }).waitFor();
-  console.log(
-    "PASS: Token creation and revocation still work after navigating between management submenus",
-  );
-  await page.getByRole("button", { name: "设备管理", exact: true }).click();
-  await sidebar.getByRole("link", { name: "接入此电脑", exact: true }).click();
-  await page.waitForURL(`${base}/connect`);
-  await page.getByRole("button", { name: "下载与安装", exact: true }).waitFor();
-  await page.getByRole("button", { name: "使用指南", exact: true }).click();
-  await sidebar.getByRole("link", { name: "客户端接入", exact: true }).click();
-  await page
-    .getByRole("heading", { name: "客户端接入", exact: true })
-    .waitFor();
-  await page.screenshot({
-    path: "/tmp/remote-console-guide-desktop.png",
-    fullPage: false,
-  });
+  await page.getByLabel('当前密码',{exact:true}).waitFor();
+  assert.equal(await sidebar.getByRole('link',{name:'系统管理',exact:true}).getAttribute('data-active'),'true');
+  await page.getByRole('tab',{name:'连接设置',exact:true}).click();
+  await page.getByLabel('工作空间名称',{exact:true}).waitFor();
+  await page.getByRole('tab',{name:'Token 管理',exact:true}).click();
+  const row=page.getByRole('row').filter({hasText:'导航测试主机'});
+  await row.getByRole('button',{name:'撤销',exact:true}).click();
+  await page.getByRole('button',{name:'确认撤销',exact:true}).click();
+  await row.getByText('已撤销',{exact:true}).waitFor();
+  await sidebar.getByRole('link',{name:'接入此电脑',exact:true}).click();
+  await page.getByRole('button',{name:'下载与安装',exact:true}).waitFor();
+  await sidebar.getByRole('link',{name:'使用指南',exact:true}).click();
+  await page.getByRole('navigation',{name:'指南主题'}).getByRole('link',{name:'客户端接入',exact:true}).click();
+  await page.getByRole('heading',{name:'客户端接入',exact:true}).waitFor();
+  await page.screenshot({path:'/tmp/remote-console-page-navigation-desktop.png'});
   await page.locator('[data-sidebar="trigger"]').click();
-  await page.getByRole("button", { name: "系统管理", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Token 管理", exact: true }).click();
-  await page.waitForURL(`${base}/management/tokens`);
-  await page.getByText("已有 Token", { exact: true }).waitFor();
+  await sidebar.getByRole('link',{name:'系统管理',exact:true}).click();
+  await page.getByLabel('工作空间名称',{exact:true}).waitFor();
   await publicPage.goto(`${base}/management/tokens`);
   await publicPage.waitForURL(`${base}/login`);
-  console.log(
-    "PASS: collapsed sidebar dropdown navigates; anonymous management route still requires login",
-  );
-  assert.deepEqual(errors, []);
-  console.log(
-    "PASS: management submenus deep-link, tab changes update URL, refresh preserves section, connection page retains navigation",
-  );
+  assert.deepEqual(errors,[]);
+  console.log('PASS: system management tabs preserve URL and active page; Token operations, collapsed direct links and login guard work');
 } finally {
   await browser?.close();
   vite?.kill("SIGTERM");

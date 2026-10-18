@@ -19,6 +19,7 @@ type BaseNavItem = {
 }
 
 type NavLink = BaseNavItem & {
+  matchChildren?: boolean
   url: LinkProps['to'] | (string & {})
   items?: never
 }

@@ -9,7 +9,7 @@ function Page() {
   return (
     <>
       <Header>
-        <span className='text-sm font-medium'>设备管理 / 接入此电脑</span>
+        <span className='text-sm font-medium'>接入此电脑</span>
       </Header>
       <BrowserHost />
     </>
