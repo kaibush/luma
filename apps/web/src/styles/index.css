@@ -225,7 +225,7 @@
   white-space: normal;
 }
 
-.remote-viewer .remote-tool-handle {
+button.remote-tool-handle {
   position: absolute;
   z-index: 10;
   width: 28px;
@@ -248,7 +248,7 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .remote-viewer .remote-tool-handle {
+  button.remote-tool-handle {
     transition: none;
   }
 }

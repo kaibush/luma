@@ -6,6 +6,7 @@ import { Field, FieldLabel } from '@/components/ui/field'
 import { PasswordInput } from '@/components/password-input'
 import { sendSignal } from '@/features/remote/api'
 import { enterDisplayMode } from '@/features/remote/display-mode'
+import { ImmersiveHandle } from '@/features/remote/immersive-handle'
 import { RemotePeer, type Telemetry } from '@/features/remote/peer'
 import { RemoteKeyboard } from '@/features/remote/remote-keyboard'
 import { shareSocket } from './connection'
@@ -25,6 +26,11 @@ export function ShareViewer({ id }: { id: string }) {
   const [immersive, setImmersive] = useState(false)
   const [displayHint, setDisplayHint] = useState('')
   const surface = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (!displayHint) return
+    const timer = window.setTimeout(() => setDisplayHint(''), 3000)
+    return () => window.clearTimeout(timer)
+  }, [displayHint])
   const [asciiOnly, setAsciiOnly] = useState(true)
   const pointer = useRef<{ id: number; button: 'left' | 'right' } | null>(null)
   const video = useRef<HTMLVideoElement>(null)
@@ -212,7 +218,7 @@ export function ShareViewer({ id }: { id: string }) {
     setImmersive(true)
     setDisplayHint(
       mode === 'immersive'
-        ? '已进入沉浸模式，可手动横屏；浏览器地址栏由系统管理。'
+        ? '已进入沉浸模式，点边缘按钮打开菜单，按住可拖动；可手动横屏。'
         : ''
     )
   }
@@ -309,7 +315,7 @@ export function ShareViewer({ id }: { id: string }) {
           autoPlay
           playsInline
           muted
-          controls={!canControl}
+          controls={!canControl && !immersive}
           tabIndex={canControl ? 0 : undefined}
           aria-label='共享远程画面'
           style={{ touchAction: canControl ? 'none' : 'auto' }}
@@ -389,7 +395,26 @@ export function ShareViewer({ id }: { id: string }) {
           </div>
         )}
       </div>
-      {connected && (
+      {connected && immersive && (
+        <ImmersiveHandle
+          onRestore={exitDisplay}
+          onKeyboard={
+            canControl
+              ? () => {
+                  release()
+                  setKeyboard((value) => !value)
+                }
+              : undefined
+          }
+          onLeave={() => {
+            stop()
+            setConnected(false)
+            setStatus('已离开共享')
+          }}
+          leaveLabel='离开观看'
+        />
+      )}
+      {connected && !immersive && (
         <div
           className={
             immersive

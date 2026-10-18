@@ -80,6 +80,7 @@ try {
   const events=()=>readFileSync(`${temp}/events.jsonl`,'utf8').trim().split('\n').filter(Boolean).map(JSON.parse)
   await waitFor(()=>events().some(e=>e.type===2&&e.detail===metadata.keyA),15000)
   assert.ok(events().some(e=>e.type===4&&e.detail===1))
+  await guest.getByRole('button',{name:'显示工具',exact:true}).click()
   await guest.getByRole('button',{name:'键盘',exact:true}).click()
   await guest.getByRole('tab',{name:'文字输入',exact:true}).click()
   await guest.getByLabel('发送文本',{exact:true}).fill('abc')

@@ -315,7 +315,7 @@ export function Viewer({
     setImmersive(true)
     setDisplayHint(
       result === 'immersive'
-        ? '已进入沉浸模式。点边缘小按钮恢复工具，按住可拖动移位。'
+        ? '已进入沉浸模式。点边缘按钮打开菜单，按住可拖动移位。'
         : ''
     )
   }
@@ -392,7 +392,16 @@ export function Viewer({
         {immersive && (
           <>
             <ImmersiveHandle
+              onKeyboard={() => {
+                setImmersive(false)
+                setDisplayHint('')
+                openPanel('keyboard')
+              }}
+              onLeave={exit}
               onRestore={() => {
+                releasePointer()
+                if (document.fullscreenElement)
+                  void document.exitFullscreen().catch(() => {})
                 setImmersive(false)
                 setDisplayHint('')
               }}
