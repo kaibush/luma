@@ -35,12 +35,17 @@ export function LoginPage() {
     }
   }
   return (
-    <main className='mx-auto flex min-h-svh max-w-md flex-col justify-center gap-6 p-4'>
-      <div className='flex items-center justify-center gap-3'>
-        <span className='flex size-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground'>
-          <Monitor className='size-6' />
+    <main className='mx-auto flex min-h-svh max-w-md flex-col justify-center gap-8 bg-background p-6'>
+      <div className='flex flex-col items-center gap-3 text-center'>
+        <span className='flex size-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground'>
+          <Monitor className='size-7' />
         </span>
-        <span className='text-xl font-semibold'>{state.workspaceName}</span>
+        <div>
+          <h1 className='text-2xl font-semibold'>{state.workspaceName}</h1>
+          <p className='mt-1 text-sm text-muted-foreground'>
+            登录后管理主机，并连接你的桌面。
+          </p>
+        </div>
       </div>
       <form
         onSubmit={(e) => {
@@ -48,7 +53,7 @@ export function LoginPage() {
           void submit()
         }}
       >
-        <Card>
+        <Card className='shadow-none'>
           <CardHeader>
             <CardTitle>登录你的工作空间</CardTitle>
             <CardDescription>管理主机，随时连接你的桌面。</CardDescription>
@@ -86,7 +91,7 @@ export function LoginPage() {
             </FieldGroup>
           </CardContent>
           <CardFooter>
-            <Button className='w-full' disabled={busy}>
+            <Button size='lg' className='w-full' disabled={busy}>
               {busy ? '登录中…' : '登录'}
             </Button>
           </CardFooter>

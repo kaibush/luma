@@ -26,7 +26,7 @@ Linux X11 主机端已实现系统采集/注入。`BrowserHost` 仍是 getDispla
 | 层 | 当前实现 | 扩展方向 |
 | --- | --- | --- |
 | 管理 UI | shadcn-admin 布局、主机列表、鉴权入口 | 主机分组、账户、审计、历史会话 |
-| 控制面 | Fastify，单实例内存主机/会话表 | 抽取 HostRepository / SessionRepository，PostgreSQL 元数据、Redis 租约与实例消息 |
+| 控制面 | Fastify，SQLite 主机档案；在线连接与活动会话保存在单实例内存 | 抽取 HostRepository / SessionRepository，PostgreSQL 元数据、Redis 租约与实例消息 |
 | 信令 | WSS 首帧认证，offer/answer/ICE 定向转发 | 版本协商、设备身份、重新协商、ICE restart |
 | WebRTC 客户端 | `RemotePeer` 封装协商、双输入通道、统计 | 自适应档位策略、音频、多屏、重连退避 |
 | 主机实现 | Linux X11 实际主机端 + BrowserHost 测试端 | 原生桌面 Agent（下面的接口和平台选择） |
@@ -95,5 +95,7 @@ HostRuntime.startSession(lease, capabilities) / stopSession(reason)
 ## 设备工具协议
 
 主机认证可附带持久化 `deviceId` 和终端、文件、剪贴板、音频能力。服务端对 Token 身份和设备 ID 派生稳定主机 ID，元数据保存在 SQLite；只有确认 `ready.protocol >= 2` 后，Agent 才发送状态，兼容旧 API。
+
+主机档案与连接分离：注册成功后持久保存主机名称、类型、能力、密钥关联和最近在线时间。离线只移除在线连接，释放会话并更新档案；服务重启时档案仍在，`online` 由当前连接和密钥有效状态计算。`GET /api/hosts` 返回全部档案，调用方必须同时检查 `online` 与 `busy`。同一密钥和设备 ID 重连复用档案；换用另一把密钥会生成新身份，避免不同密钥之间认领设备。浏览器在同一标签页使用 sessionStorage 保存设备 ID，不保存密钥。
 
 会话有 `desktop` / `tools` 两种模式，共用现有独占租约。工具模式需要管理员登录，预留和 WS 连接绑定同一 principal。服务端发给 Agent 的 `tools` 授权与 Agent 本机开关同时满足后，才打开可靠 `tools` DataChannel。终端命令、文件和剪贴板不经 API 中转；每个请求有独立 ID、超时、队列和背压限制。文件一次一块 12 KiB，终端输入输出也限制长度。会话结束关闭 PTY/ConPTY、上传临时文件和下载句柄。

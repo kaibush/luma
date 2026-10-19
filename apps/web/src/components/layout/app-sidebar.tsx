@@ -13,23 +13,23 @@ import { sidebarData } from './data/sidebar-data'
 import { NavGroup } from './nav-group'
 
 export function AppSidebar() {
-  const { collapsible, variant } = useLayout()
+  const { collapsible } = useLayout()
   const { state } = useRemoteAuth()
   return (
-    <Sidebar collapsible={collapsible} variant={variant}>
-      <SidebarHeader>
+    <Sidebar collapsible={collapsible} variant='sidebar'>
+      <SidebarHeader className='px-4 pt-4 pb-2'>
         <a
           href='/'
-          className='flex items-center gap-3 overflow-hidden rounded-xl p-2'
+          className='flex items-center gap-3 overflow-hidden rounded-xl p-1'
         >
-          <span className='flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground'>
-            <Monitor className='size-5' />
+          <span className='flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground'>
+            <Monitor className='size-4' />
           </span>
           <span className='min-w-0 group-data-[collapsible=icon]:hidden'>
             <span className='block truncate text-sm font-semibold'>
               {state.workspaceName}
             </span>
-            <span className='text-xs text-muted-foreground'>远程工作空间</span>
+            <span className='text-xs text-muted-foreground'>远程控制台</span>
           </span>
         </a>
       </SidebarHeader>
@@ -39,8 +39,8 @@ export function AppSidebar() {
         ))}
       </SidebarContent>
       <SidebarFooter>
-        <p className='p-2 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden'>
-          WebRTC · 远程控制台
+        <p className='px-3 py-2 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden'>
+          画面与键鼠走加密连接
         </p>
       </SidebarFooter>
       <SidebarRail />

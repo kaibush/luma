@@ -20,7 +20,8 @@
     "test:tools": "tsx scripts/tools-smoke.mjs",
     "test:shares": "tsx scripts/shares-smoke.mjs",
     "test:remote-shares": "tsx scripts/remote-shares-smoke.mjs",
-    "test:navigation": "tsx scripts/navigation-smoke.mjs"
+    "test:navigation": "tsx scripts/navigation-smoke.mjs",
+    "test:host-lifecycle": "tsx scripts/host-lifecycle-smoke.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

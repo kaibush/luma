@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { qualityProfiles, type InputEvent } from '@remote/protocol'
+import {
+  qualityProfiles,
+  type InputEvent,
+  type AccessToken,
+} from '@remote/protocol'
 import { ArrowLeft, Download, Monitor, Radio, Square } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -26,12 +30,46 @@ import {
   FieldDescription,
 } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { PasswordInput } from '@/components/password-input'
+import { request } from '@/features/access/auth'
 import { signaling, sendSignal } from './api'
 import { RemotePeer } from './peer'
 
+function browserDeviceId() {
+  if (!globalThis.crypto?.randomUUID) return undefined
+  const key = 'remote-browser-device-id'
+  try {
+    const existing = sessionStorage.getItem(key)
+    if (
+      existing &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        existing
+      )
+    )
+      return existing
+    const id = crypto.randomUUID()
+    sessionStorage.setItem(key, id)
+    return id
+  } catch {
+    return crypto.randomUUID()
+  }
+}
+
 export function BrowserHost() {
+  const [deviceId] = useState(browserDeviceId)
+  const [availableTokens, setAvailableTokens] = useState<AccessToken[]>([])
+  const [selectedToken, setSelectedToken] = useState('')
+  const [verifiedToken, setVerifiedToken] = useState('')
+  const [keyBusy, setKeyBusy] = useState(false)
   const [token, setToken] = useState(''),
     [name, setName] = useState('我的电脑'),
     [state, setState] = useState('未共享'),
@@ -62,7 +100,30 @@ export function BrowserHost() {
     if (preview.current) preview.current.srcObject = null
     setState('未共享')
     setBusy(false)
+    setKeyBusy(false)
+    setVerifiedToken('')
   }
+  useEffect(() => {
+    if (panel !== 'browser') return
+    let disposed = false
+    void request<{ user: unknown }>('/auth/me')
+      .then(async (auth) => {
+        if (!auth.user) return
+        const result = await request<{ tokens: AccessToken[] }>(
+          '/manage/tokens'
+        )
+        if (!disposed)
+          setAvailableTokens(
+            result.tokens.filter(
+              (t) => t.scope === 'host' && t.status === 'active' && t.revealable
+            )
+          )
+      })
+      .catch(() => {})
+    return () => {
+      disposed = true
+    }
+  }, [panel])
   useEffect(() => {
     const r = resources.current
     const timer = setInterval(() => {
@@ -80,8 +141,37 @@ export function BrowserHost() {
       r.stream?.getTracks().forEach((t) => t.stop())
     }
   }, [])
+  const verifyToken = async () => {
+    setError('')
+    if (!token.trim()) {
+      setError(
+        '请先填写主机密钥：由管理员在「系统管理 → Token 管理」创建主机接入密钥。'
+      )
+      document.getElementById('host-token')?.focus()
+      return
+    }
+    const generation = resources.current.generation
+    setKeyBusy(true)
+    try {
+      const result = await request<{ name: string }>(
+        '/auth/host-token/verify',
+        { token: token.trim() }
+      )
+      if (resources.current.generation !== generation) return
+      setVerifiedToken(token.trim())
+      setState(`密钥已验证：${result.name}。请继续选择屏幕。`)
+    } catch (e) {
+      if (resources.current.generation === generation) {
+        setVerifiedToken('')
+        setError((e as Error).message)
+      }
+    } finally {
+      if (resources.current.generation === generation) setKeyBusy(false)
+    }
+  }
   const start = async () => {
-    if (busy) return
+    if (busy || keyBusy || !verifiedToken || verifiedToken !== token.trim())
+      return
     setError('')
     if (!window.isSecureContext) {
       setError(
@@ -102,7 +192,7 @@ export function BrowserHost() {
     }
     if (!token.trim()) {
       setError(
-        '请先填写主机密钥：由管理员在「管理设置 → Token 管理」创建用途为「主机」的密钥。'
+        '请先填写主机密钥：由管理员在「系统管理 → Token 管理」创建用途为「主机」的密钥。'
       )
       document.getElementById('host-token')?.focus()
       return
@@ -130,13 +220,18 @@ export function BrowserHost() {
       stream.getVideoTracks()[0].onended = stop
       setState('正在注册')
       r.ws = signaling(
-        { role: 'host', token: token.trim(), name: name.trim() },
+        {
+          role: 'host',
+          kind: 'browser',
+          deviceId,
+          token: token.trim(),
+          name: name.trim(),
+        },
         (message) => {
           if (r.generation !== generation) return
           if (message.type === 'ready') {
             clearTimeout(r.registrationTimer)
-            setState('在线，等待连接')
-            setToken('')
+            setState(`已上线：${name.trim()}。请从主机列表点击「观看画面」。`)
           } else if (message.type === 'session') {
             r.peer?.close()
             setState('正在连接')
@@ -196,9 +291,11 @@ export function BrowserHost() {
           if (r.generation === generation) {
             stop()
             setError(
-              closeEvent.code === 1008
-                ? '主机密钥无效、已过期或被撤销。请使用用途为「主机」的密钥，不能填写管理员密码或控制端密钥。'
-                : '主机连接已断开，请检查网络后重新选择屏幕共享。'
+              closeEvent.reason === 'Device already connected'
+                ? '此浏览器共享已在其他页面接入，请先停止另一页面的共享。'
+                : closeEvent.code === 1008
+                  ? '主机密钥无效、已过期或被撤销。请使用用途为「主机」的密钥，不能填写管理员密码或控制端密钥。'
+                  : '主机连接已断开，请检查网络后重新选择屏幕共享。'
             )
           }
         }
@@ -220,7 +317,7 @@ export function BrowserHost() {
     }
   }
   return (
-    <main className='mx-auto flex max-w-4xl flex-col gap-6 p-4 md:p-8'>
+    <main className='mx-auto flex max-w-4xl flex-col gap-6 p-3 md:p-4'>
       <div className='flex items-center justify-between'>
         <Button variant='ghost' asChild>
           <a href='/'>
@@ -238,7 +335,7 @@ export function BrowserHost() {
         </Button>
       </div>
       <div>
-        <h1 className='text-3xl font-semibold'>接入电脑</h1>
+        <h1 className='text-2xl font-semibold tracking-tight'>接入电脑</h1>
         <p className='mt-2 text-muted-foreground'>
           选择接入方式，几步完成配置。手机只需登录控制台即可操作。
         </p>
@@ -310,7 +407,7 @@ export function BrowserHost() {
             <DialogDescription>
               {panel === 'install'
                 ? '在要被远程控制的电脑上完成以下步骤。'
-                : '关闭此窗口会停止共享。访客链接请使用屏幕共享页面。'}
+                : '上线后，其他已登录的控制台用户可从主机列表观看。关闭此窗口会停止共享，离线档案仍保留。'}
             </DialogDescription>
           </DialogHeader>
           {panel === 'install' && (
@@ -365,12 +462,12 @@ export function BrowserHost() {
                   onFocus={(e) => e.target.select()}
                 />
                 <p className='text-sm text-muted-foreground'>
-                  管理员在「管理设置 → Token
+                  管理员在「系统管理 → Token
                   管理」创建主机密钥，填入客户端后点击「保存并连接」。
                 </p>
                 <div className='flex gap-2'>
                   <Button variant='outline' asChild>
-                    <a href='/management'>管理设置</a>
+                    <a href='/management/tokens'>Token 管理</a>
                   </Button>
                   <Button variant='ghost' asChild>
                     <a href='/guide/install' target='_blank' rel='noreferrer'>
@@ -387,7 +484,7 @@ export function BrowserHost() {
                 <CardHeader>
                   <CardTitle>浏览器主机接入</CardTitle>
                   <CardDescription>
-                    不用安装客户端。先填下面两项，再选择要共享的内容。
+                    先选择或粘贴主机密钥并验证，再选择要共享的屏幕。
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -396,37 +493,110 @@ export function BrowserHost() {
                     noValidate
                     onSubmit={(e) => {
                       e.preventDefault()
-                      void start()
+                      if (verifiedToken && verifiedToken === token.trim())
+                        void start()
+                      else void verifyToken()
                     }}
                   >
                     <FieldGroup>
-                      <Field data-disabled={busy}>
+                      <Field data-disabled={busy || keyBusy}>
                         <FieldLabel htmlFor='host-name'>共享名称</FieldLabel>
                         <Input
                           id='host-name'
                           value={name}
-                          disabled={busy}
+                          disabled={busy || keyBusy}
                           maxLength={64}
                           required
                           onChange={(e) => setName(e.target.value)}
                         />
                       </Field>
-                      <Field data-disabled={busy}>
+                      {!!availableTokens.length && (
+                        <Field data-disabled={busy || keyBusy}>
+                          <FieldLabel htmlFor='saved-host-token'>
+                            选择已有主机密钥
+                          </FieldLabel>
+                          <Select
+                            value={selectedToken}
+                            disabled={busy || keyBusy}
+                            onValueChange={(id) => {
+                              setSelectedToken(id)
+                              setKeyBusy(true)
+                              setVerifiedToken('')
+                              setToken('')
+                              setError('')
+                              const generation = resources.current.generation
+                              void request<{ value: string }>(
+                                `/manage/tokens/${id}/reveal`,
+                                {}
+                              )
+                                .then((result) => {
+                                  if (
+                                    resources.current.generation === generation
+                                  )
+                                    setToken(result.value)
+                                })
+                                .catch((e) => {
+                                  if (
+                                    resources.current.generation === generation
+                                  )
+                                    setError(e.message)
+                                })
+                                .finally(() => {
+                                  if (
+                                    resources.current.generation === generation
+                                  )
+                                    setKeyBusy(false)
+                                })
+                            }}
+                          >
+                            <SelectTrigger id='saved-host-token'>
+                              <SelectValue placeholder='选择用于此次接入的密钥' />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectGroup>
+                                {availableTokens.map((item) => (
+                                  <SelectItem key={item.id} value={item.id}>
+                                    {item.name} · 尾号 {item.suffix}
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                            </SelectContent>
+                          </Select>
+                          <FieldDescription>
+                            仅列出有效的主机接入密钥，控制 API
+                            密钥不能用于此处。
+                          </FieldDescription>
+                        </Field>
+                      )}
+                      <Field data-disabled={busy || keyBusy}>
                         <FieldLabel htmlFor='host-token'>主机密钥</FieldLabel>
                         <PasswordInput
                           id='host-token'
                           value={token}
                           visibilityLabel='密钥'
                           autoComplete='off'
-                          disabled={busy}
+                          disabled={busy || keyBusy}
                           required
-                          onChange={(e) => setToken(e.target.value)}
+                          onChange={(e) => {
+                            setToken(e.target.value)
+                            setVerifiedToken('')
+                            setSelectedToken('')
+                            setState('未共享')
+                          }}
                           placeholder='粘贴管理员提供的主机密钥'
                           maxLength={256}
                         />
                         <FieldDescription>
-                          在「管理设置 → Token
-                          管理」创建用途为「主机」的密钥。此处不填写管理员密码。
+                          在「系统管理 → Token
+                          管理」创建主机接入密钥，复制完整密钥，不能使用尾号。
+                          <a
+                            href='/management/tokens'
+                            target='_blank'
+                            rel='noreferrer'
+                            className='underline'
+                          >
+                            管理密钥
+                          </a>
                         </FieldDescription>
                       </Field>
                     </FieldGroup>
@@ -442,26 +612,41 @@ export function BrowserHost() {
                     </Alert>
                   )}
                   <div className='flex flex-wrap gap-2'>
-                    <Button form='host-form' disabled={busy} type='submit'>
+                    <Button
+                      form='host-form'
+                      disabled={busy || keyBusy}
+                      type='submit'
+                    >
                       <Radio data-icon='inline-start' />
-                      选择屏幕并上线
+                      {keyBusy
+                        ? '正在读取 / 验证密钥'
+                        : verifiedToken
+                          ? '选择屏幕并上线'
+                          : '验证主机密钥'}
                     </Button>
                     <Button variant='outline' disabled={!busy} onClick={stop}>
                       <Square data-icon='inline-start' />
                       停止共享
                     </Button>
+                    {busy && (
+                      <Button variant='outline' asChild>
+                        <a href='/' target='_blank' rel='noreferrer'>
+                          打开主机列表观看
+                        </a>
+                      </Button>
+                    )}
                   </div>
                 </CardFooter>
               </Card>
               <details className='rounded-lg border p-3'>
                 <summary className='cursor-pointer text-sm'>
-                  画面预览与输入测试
+                  本机画面预览与连接测试
                 </summary>
                 <Card>
                   <CardHeader>
                     <CardTitle>本机预览</CardTitle>
                     <CardDescription>
-                      建议共享其他窗口，避免反复捕获此预览。
+                      此处用于确认共享范围。其他控制台用户在主机列表点击「观看画面」即可观看；建议共享其他窗口以避免画面循环。
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -476,9 +661,9 @@ export function BrowserHost() {
                 </Card>
                 <Card>
                   <CardHeader>
-                    <CardTitle>输入协议测试</CardTitle>
+                    <CardTitle>输入事件测试（仅用于诊断）</CardTitle>
                     <CardDescription>
-                      在控制端点击、拖动或输入文字，观察事件是否到达。
+                      显示观看端传来的事件，不会操作本机系统鼠标、键盘或其他应用。
                     </CardDescription>
                   </CardHeader>
                   <CardContent>

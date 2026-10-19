@@ -1,11 +1,13 @@
 import {
+  BookOpen,
+  Command,
   Monitor,
   Radio,
-  Command,
   Settings,
   Share2,
-  BookOpen,
+  ShieldCheck,
 } from 'lucide-react'
+import { guides } from '@/features/guide/content'
 import { type SidebarData } from '../types'
 
 export const sidebarData: SidebarData = {
@@ -21,13 +23,24 @@ export const sidebarData: SidebarData = {
       ],
     },
     {
-      title: '管理与安全',
+      title: '系统管理',
       items: [
         {
-          title: '系统管理',
-          url: '/management',
+          title: '连接与凭据',
           icon: Settings,
-          matchChildren: true,
+          items: [
+            { title: '连接设置', url: '/management' },
+            { title: 'Token 管理', url: '/management/tokens' },
+            { title: '活动连接', url: '/management/sessions' },
+          ],
+        },
+        {
+          title: '安全与记录',
+          icon: ShieldCheck,
+          items: [
+            { title: '账号安全', url: '/management/account' },
+            { title: '操作记录', url: '/management/audit' },
+          ],
         },
       ],
     },
@@ -36,9 +49,14 @@ export const sidebarData: SidebarData = {
       items: [
         {
           title: '使用指南',
-          url: '/guide',
           icon: BookOpen,
-          matchChildren: true,
+          items: [
+            { title: '快速开始', url: '/guide' },
+            ...guides.map((guide) => ({
+              title: guide.title,
+              url: `/guide/${guide.id}`,
+            })),
+          ],
         },
       ],
     },

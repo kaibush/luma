@@ -31,7 +31,7 @@ try {
   const stopped = once(host, 'exit'); host.stdin!.end('stop\n'); await stopped
   for (let i = 0; i < 30; i++) {
     const hosts = (await app.inject({ url: '/api/hosts', headers: { authorization: `Bearer ${control}` } })).json().hosts
-    if (!hosts.length) { console.log('PASS managed shutdown removes host'); break }
+    if (hosts.length && !hosts[0].online) { console.log('PASS managed shutdown keeps an offline host record'); break }
     if (i === 29) throw new Error('Host remained online')
     await new Promise(r => setTimeout(r, 100))
   }

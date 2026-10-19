@@ -38,6 +38,7 @@ import { Field, FieldLabel, FieldGroup } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { api, signaling, sendSignal } from './api'
+import { hostOfflineHint } from './host-status'
 import { RemotePeer } from './peer'
 import type { ToolClient } from './tool-client'
 
@@ -53,13 +54,24 @@ export function DeviceStatus({ host }: { host: Host }) {
   const s = host.stats
   return (
     <div className='flex flex-col gap-3'>
+      {!host.online && (
+        <Alert>
+          <AlertDescription>{hostOfflineHint(host)}</AlertDescription>
+        </Alert>
+      )}
       {!s ? (
-        <p>客户端尚未上报状态，请更新客户端。</p>
+        <p>
+          {host.kind === 'browser'
+            ? '临时浏览器接入不提供系统状态。'
+            : '暂无客户端状态数据。'}
+        </p>
       ) : (
         <>
           <p className='text-sm text-muted-foreground'>
             {s.platform} · 客户端 {s.version} ·{' '}
-            {Date.now() - s.sampledAt > 15000 ? '数据已过期' : '每 5 秒更新'}
+            {!host.online || Date.now() - s.sampledAt > 15000
+              ? '历史数据'
+              : '每 5 秒更新'}
           </p>
           <div className='grid grid-cols-2 gap-3 sm:grid-cols-4'>
             {[
@@ -821,13 +833,14 @@ export function HostWorkspace({
     [error, setError] = useState('')
   const [group, setGroup] = useState(host.group || ''),
     [note, setNote] = useState(host.note || ''),
-    [saving, setSaving] = useState(false)
+    [saving, setSaving] = useState(false),
+    [editingMeta, setEditingMeta] = useState(false)
   const cleanup = useRef<() => Promise<void>>(async () => {})
   const [visited, setVisited] = useState({ terminal: false, files: false })
   const [attempt, setAttempt] = useState(0)
   const needTools = visited.terminal || visited.files
   useEffect(() => {
-    if (!needTools) return
+    if (!needTools || !host.online) return
     let disposed = false,
       ws: WebSocket | undefined,
       peer: RemotePeer | undefined,
@@ -914,7 +927,7 @@ export function HostWorkspace({
       setClient(undefined)
       void close()
     }
-  }, [host.id, needTools, attempt])
+  }, [host.id, host.online, needTools, attempt])
   return (
     <Dialog
       open
@@ -959,57 +972,101 @@ export function HostWorkspace({
               <TabsTrigger value='status'>状态</TabsTrigger>
               <TabsTrigger
                 value='terminal'
-                disabled={!host.capabilities.terminal}
+                disabled={!host.online || !host.capabilities.terminal}
               >
                 终端
               </TabsTrigger>
-              <TabsTrigger value='files' disabled={!host.capabilities.files}>
+              <TabsTrigger
+                value='files'
+                disabled={!host.online || !host.capabilities.files}
+              >
                 文件
               </TabsTrigger>
-              <TabsTrigger value='desktop'>桌面</TabsTrigger>
+              <TabsTrigger value='desktop' disabled={!host.online}>
+                桌面
+              </TabsTrigger>
             </TabsList>
             <TabsContent value='status' className='overflow-y-auto pr-1'>
               <DeviceStatus host={host} />
-              <form
-                className='mt-4'
-                onSubmit={async (e) => {
-                  e.preventDefault()
-                  setSaving(true)
-                  try {
-                    await api(`/hosts/${host.id}`, '', {
-                      method: 'PUT',
-                      body: JSON.stringify({ group, note }),
-                    })
-                    setError('')
-                  } catch (e) {
-                    setError((e as Error).message)
-                  } finally {
-                    setSaving(false)
-                  }
-                }}
-              >
-                <FieldGroup>
-                  <Field>
-                    <FieldLabel htmlFor='group'>主机分组</FieldLabel>
-                    <Input
-                      id='group'
-                      value={group}
-                      maxLength={60}
-                      onChange={(e) => setGroup(e.target.value)}
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor='note'>备注</FieldLabel>
-                    <Input
-                      id='note'
-                      value={note}
-                      maxLength={500}
-                      onChange={(e) => setNote(e.target.value)}
-                    />
-                  </Field>
-                  <Button disabled={saving}>保存分组与备注</Button>
-                </FieldGroup>
-              </form>
+              <div className='mt-4 flex items-center justify-between gap-3 rounded-xl border px-4 py-3'>
+                <div className='min-w-0'>
+                  <p className='text-sm font-medium'>分组与备注</p>
+                  <p className='truncate text-sm text-muted-foreground'>
+                    {group || '未分组'}
+                    {note ? ` · ${note}` : ''}
+                  </p>
+                </div>
+                <Button
+                  variant='outline'
+                  size='sm'
+                  onClick={() => setEditingMeta(true)}
+                >
+                  编辑
+                </Button>
+              </div>
+              <Dialog open={editingMeta} onOpenChange={setEditingMeta}>
+                <DialogContent className='sm:max-w-md'>
+                  <DialogHeader>
+                    <DialogTitle>分组与备注</DialogTitle>
+                    <DialogDescription>
+                      只改变这台主机在控制台中的归类，不影响远程连接。
+                    </DialogDescription>
+                  </DialogHeader>
+                  <form
+                    className='flex flex-col gap-5'
+                    onSubmit={async (e) => {
+                      e.preventDefault()
+                      setSaving(true)
+                      try {
+                        await api(`/hosts/${host.id}`, '', {
+                          method: 'PUT',
+                          body: JSON.stringify({ group, note }),
+                        })
+                        setError('')
+                        setEditingMeta(false)
+                      } catch (err) {
+                        setError((err as Error).message)
+                      } finally {
+                        setSaving(false)
+                      }
+                    }}
+                  >
+                    <FieldGroup>
+                      <Field>
+                        <FieldLabel htmlFor='group'>主机分组</FieldLabel>
+                        <Input
+                          id='group'
+                          value={group}
+                          maxLength={60}
+                          onChange={(e) => setGroup(e.target.value)}
+                        />
+                      </Field>
+                      <Field>
+                        <FieldLabel htmlFor='note'>备注</FieldLabel>
+                        <Input
+                          id='note'
+                          value={note}
+                          maxLength={500}
+                          onChange={(e) => setNote(e.target.value)}
+                        />
+                      </Field>
+                    </FieldGroup>
+                    <DialogFooter>
+                      <Button
+                        type='button'
+                        variant='outline'
+                        disabled={saving}
+                        onClick={() => setEditingMeta(false)}
+                      >
+                        取消
+                      </Button>
+                      <Button disabled={saving} type='submit'>
+                        保存
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
             </TabsContent>
             <TabsContent
               value='terminal'
@@ -1039,6 +1096,7 @@ export function HostWorkspace({
             </TabsContent>
             <TabsContent value='desktop'>
               <Button
+                disabled={!host.online}
                 onClick={() => {
                   void cleanup.current().then(onDesktop)
                 }}

@@ -48,10 +48,10 @@ test('authentication, exclusive sessions, signal routing, disconnect cleanup', {
     const closed = once(host, 'close'); host.close(); await closed
     // Closing TCP can precede the server's close event by one event-loop turn.
     for (let i = 0; i < 20; i++) {
-      if ((await app.inject({url: '/api/hosts', headers})).json().hosts.length === 0) break
+      if ((await app.inject({url: '/api/hosts', headers})).json().hosts[0]?.online === false) break
       await new Promise(r => setTimeout(r, 10))
     }
-    assert.deepEqual((await app.inject({url: '/api/hosts', headers})).json().hosts, [])
+    assert.equal((await app.inject({url: '/api/hosts', headers})).json().hosts[0].online, false)
   } finally { clients.forEach(ws => ws.terminate()); await app.close() }
 })
 

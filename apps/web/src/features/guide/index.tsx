@@ -44,9 +44,14 @@ export function GuidePage({ topic }: { topic?: string }) {
         </div>
         <nav
           aria-label='指南主题'
-          className='flex flex-wrap gap-1 rounded-xl bg-muted p-1'
+          className='-mx-1 flex gap-1 overflow-x-auto px-1 pb-1'
         >
-          <Button size='sm' variant={!article ? 'secondary' : 'ghost'} asChild>
+          <Button
+            size='sm'
+            variant={!article ? 'secondary' : 'ghost'}
+            className='h-11 shrink-0 rounded-lg px-4'
+            asChild
+          >
             <Link to='/guide' aria-current={!article ? 'page' : undefined}>
               快速开始
             </Link>
@@ -56,6 +61,7 @@ export function GuidePage({ topic }: { topic?: string }) {
               key={g.id}
               size='sm'
               variant={topic === g.id ? 'secondary' : 'ghost'}
+              className='h-11 shrink-0 rounded-lg px-4'
               asChild
             >
               <Link
@@ -70,27 +76,24 @@ export function GuidePage({ topic }: { topic?: string }) {
         </nav>
         {!article ? (
           <>
-            <section className='rounded-xl border bg-muted/40 p-5'>
+            <section className='rounded-xl border bg-card p-5'>
               <h2 className='font-semibold'>第一次使用？从这里开始</h2>
-              <ol className='mt-3 grid gap-3 text-sm sm:grid-cols-3'>
-                <li>
-                  <span className='font-medium'>1. 接入电脑</span>
-                  <p className='mt-1 text-muted-foreground'>
-                    在被控端安装客户端，填写主机密钥。
-                  </p>
-                </li>
-                <li>
-                  <span className='font-medium'>2. 开始操作</span>
-                  <p className='mt-1 text-muted-foreground'>
-                    在手机或电脑登录，连接在线主机。
-                  </p>
-                </li>
-                <li>
-                  <span className='font-medium'>3. 邀请访客</span>
-                  <p className='mt-1 text-muted-foreground'>
-                    创建分享链接，设置分享码和权限。
-                  </p>
-                </li>
+              <ol className='mt-4 grid gap-4 text-sm sm:grid-cols-3'>
+                {[
+                  ['接入电脑', '在被控端安装客户端，填写主机密钥。'],
+                  ['开始操作', '在手机或电脑登录，连接在线主机。'],
+                  ['邀请访客', '创建分享链接，设置分享码和权限。'],
+                ].map(([title, body], index) => (
+                  <li key={title} className='flex gap-3'>
+                    <span className='flex size-7 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-primary'>
+                      {index + 1}
+                    </span>
+                    <span>
+                      <span className='font-medium'>{title}</span>
+                      <p className='mt-1 text-muted-foreground'>{body}</p>
+                    </span>
+                  </li>
+                ))}
               </ol>
             </section>
             <div className='flex items-center gap-2'>
@@ -128,7 +131,7 @@ export function GuidePage({ topic }: { topic?: string }) {
           </>
         ) : (
           <div className='grid gap-6 lg:grid-cols-[1fr_180px]'>
-            <article className='min-w-0 rounded-xl border bg-card px-5 py-2 sm:px-7'>
+            <article className='min-w-0 rounded-xl border bg-card px-5 py-2 shadow-none sm:px-7'>
               {article.sections.map((section, index) => (
                 <section
                   key={section.title}

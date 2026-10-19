@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { Store, settingsSchema, type Principal } from './store.js';
+import type { Host } from '@remote/protocol';
 
 export const cookieValue = (header: string | undefined, name = 'rc_session') => header?.split(';').map(v => v.trim()).find(v => v.startsWith(`${name}=`))?.slice(name.length + 1) || '';
 export const passwordSchema = z.string().min(12, '密码至少 12 位').max(128, '密码最多 128 位');
@@ -10,7 +11,7 @@ const secretSchema = z.string().min(16).max(256).optional();
 const equal = (a: string, b: string) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); };
 declare module 'fastify' { interface FastifyRequest { principal: Principal | null } }
 
-export function registerAdmin(app: FastifyInstance, store: Store, options: {controlToken: string; secureCookies?: boolean; origins: string[]}, disconnect: (principal?: Principal) => void, connections: () => unknown) {
+export function registerAdmin(app: FastifyInstance, store: Store, options: {controlToken: string; secureCookies?: boolean; origins: string[]}, disconnect: (principal?: Principal) => void, connections: () => unknown, hosts: () => Host[]) {
   const cookie = (reply: FastifyReply, name: string, value: string, ttl: number) => reply.header('Set-Cookie', `${name}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${ttl}${options.secureCookies ? '; Secure' : ''}`);
   const admin = (req: FastifyRequest, reply: FastifyReply) => { if (req.principal?.kind !== 'session') { reply.code(401).send({error: '请使用管理员账号登录'}); return false; } return true; };
   const setup = (req: FastifyRequest, reply: FastifyReply) => {
@@ -34,6 +35,13 @@ export function registerAdmin(app: FastifyInstance, store: Store, options: {cont
     if (path.startsWith('/api/manage/') && !admin(req, reply)) return;
   });
   const limited = { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } };
+  app.post('/api/auth/host-token/verify', limited, async (req, reply) => {
+    const parsed = z.object({ token: z.string().trim().min(1).max(256) }).safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: '请填写完整的主机密钥' });
+    const principal = store.token(parsed.data.token, 'host');
+    if (!principal) return reply.code(400).send({ error: store.hostTokenError(parsed.data.token) });
+    return { name: principal.name };
+  });
   app.get('/api/auth/me', async req => ({ initialized: store.initialized(), user: req.principal?.kind === 'session' ? store.account() : null, workspaceName: store.settings().workspaceName }));
   app.post<{Body: {key?: string}}>('/api/auth/setup/unlock', limited, async (req, reply) => {
     if (store.initialized()) return reply.code(409).send({error: '系统已初始化'});
@@ -84,7 +92,21 @@ export function registerAdmin(app: FastifyInstance, store: Store, options: {cont
     return {settings: store.settings()};
   });
   app.get('/api/preferences', async () => ({workspaceName: store.settings().workspaceName, defaultQuality: store.settings().defaultQuality}));
-  app.get('/api/manage/tokens', async () => ({tokens: store.tokens()}));
+  app.get('/api/manage/tokens', async () => {
+    const devices = hosts();
+    return { tokens: store.tokens().map(token => ({ ...token,
+      hosts: devices.filter(host => host.accessToken?.id === token.id).map(({ id, name, online, lastSeenAt, reportedName, displayName }) => ({ id, name, online, lastSeenAt, reportedName, displayName })),
+    })) };
+  });
+  app.put<{Params:{id:string}}>('/api/manage/hosts/:id/name', async (req, reply) => {
+    const parsed = z.object({ displayName: z.string().trim().max(64).refine(value => !/[\u0000-\u001f\u007f]/.test(value)) }).strict().safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: '主机显示名称最多 64 个字符，不能包含换行或控制字符' });
+    const host = hosts().find(host => host.id === req.params.id);
+    if (!host) return reply.code(404).send({ error: '主机不存在' });
+    store.saveHostMetadata(host.id, { ...store.hostMetadata(host.id), displayName: parsed.data.displayName });
+    store.audit(req.principal!.name, 'host.rename', `${host.id}: ${parsed.data.displayName || '恢复客户端名称'}`);
+    return { host: { ...host, displayName: parsed.data.displayName, name: parsed.data.displayName || host.reportedName || host.name } };
+  });
   app.post('/api/manage/tokens', async (req, reply) => {
     const parsed = z.object({name: z.string().trim().min(1).max(64), scope: z.enum(['control','host']), days: z.number().int().min(1).max(365).optional()}).safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({error:'Token 参数无效'});
@@ -102,11 +124,38 @@ export function registerAdmin(app: FastifyInstance, store: Store, options: {cont
     store.audit(req.principal!.name, 'turn-secret.reveal', '管理员查看 TURN 共享密钥');
     return {value: store.credentials().turnSecret};
   });
-  app.delete<{Params:{id:string}}>('/api/manage/tokens/:id', async (req, reply) => {
-    if (!store.revoke(req.params.id)) return reply.code(404).send({error:'Token 不存在或已撤销'});
-    disconnect({kind:'token',id:req.params.id,scope:'control',name:''});
-    store.audit(req.principal!.name, 'token.revoke', req.params.id);
-    return {ok:true};
+  app.put<{Params:{id:string}}>('/api/manage/tokens/:id', async (req, reply) => {
+    const parsed = z.object({ name: z.string().trim().min(1).max(64) }).safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: '名称应为 1–64 个字符' });
+    if (!store.renameToken(req.params.id, parsed.data.name)) return reply.code(404).send({ error: 'Token 不存在' });
+    store.audit(req.principal!.name, 'token.rename', `${req.params.id}: ${parsed.data.name}`);
+    return { ok: true };
+  });
+  // Keep the original DELETE route as a revoke-only alias for older clients.
+  for (const [method, url] of [['POST', '/api/manage/tokens/:id/revoke'], ['DELETE', '/api/manage/tokens/:id']] as const) {
+    app.route<{Params:{id:string}}>({ method, url, handler: async (req, reply) => {
+      if (!store.tokens().some(token => token.id === req.params.id)) return reply.code(404).send({ error: 'Token 不存在' });
+      const changed = store.revoke(req.params.id);
+      disconnect({kind:'token',id:req.params.id,scope:'control',name:''});
+      if (changed) store.audit(req.principal!.name, 'token.revoke', req.params.id);
+      return {ok:true};
+    } });
+  }
+  app.post<{Params:{id:string}}>('/api/manage/tokens/:id/restore', async (req, reply) => {
+    const token = store.tokens().find(token => token.id === req.params.id);
+    if (!token) return reply.code(404).send({ error: 'Token 不存在' });
+    if (token.expiresAt !== null && token.expiresAt <= Date.now()) return reply.code(409).send({ error: 'Token 已过期，请创建新密钥；恢复不会延长有效期' });
+    if (store.restoreToken(token.id)) store.audit(req.principal!.name, 'token.restore', token.id);
+    return { ok: true };
+  });
+  app.delete<{Params:{id:string}}>('/api/manage/tokens/:id/purge', async (req, reply) => {
+    const token = store.tokens().find(token => token.id === req.params.id);
+    if (!token) return reply.code(404).send({ error: 'Token 不存在' });
+    if (!token.revokedAt) return reply.code(409).send({ error: '请先撤销 Token，再永久删除' });
+    store.deleteToken(token.id);
+    disconnect({kind:'token',id:token.id,scope:token.scope,name:token.name});
+    store.audit(req.principal!.name, 'token.delete', `${token.id}: ${token.name}`);
+    return { ok: true };
   });
   app.get('/api/manage/connections', async () => ({connections: connections()}));
   app.get('/api/manage/audit', async () => ({events: store.events()}));

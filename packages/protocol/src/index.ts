@@ -25,7 +25,14 @@ const signalPayloadSchema = z.discriminatedUnion('type', [
 ]);
 export const signalSchema = signalPayloadSchema.and(z.object({ sessionId: z.string().uuid() }));
 export type Signal = z.infer<typeof signalPayloadSchema>;
-export interface Host { id: string; name: string; busy: boolean; kind: 'browser' | 'linux-x11' | 'windows'; capabilities: { video: true; systemInput: boolean; textInput?: 'ascii' | 'unicode' | 'test'; maxFps?: number; terminal?: boolean; files?: boolean; clipboard?: boolean; audio?: boolean; remoteSharing?: boolean }; group?: string; note?: string; lastConnectedAt?: number; stats?: DeviceStats }
+export type TokenStatus = 'active' | 'revoked' | 'expired' | 'deleted';
+export interface AccessToken {
+  id: string; name: string; scope: 'host' | 'control'; suffix: string;
+  source: 'deployment' | 'created'; revealable: boolean; status: Exclude<TokenStatus, 'deleted'>;
+  createdAt: number; expiresAt: number | null; revokedAt: number | null; lastUsedAt: number | null;
+  hosts: { id: string; name: string; online: boolean; lastSeenAt?: number; reportedName?: string; displayName?: string }[];
+}
+export interface Host { id: string; name: string; reportedName?: string; displayName?: string; online: boolean; busy: boolean; kind: 'browser' | 'linux-x11' | 'windows'; capabilities: { video: true; systemInput: boolean; textInput?: 'ascii' | 'unicode' | 'test'; maxFps?: number; terminal?: boolean; files?: boolean; clipboard?: boolean; audio?: boolean; remoteSharing?: boolean }; group?: string; note?: string; lastConnectedAt?: number; firstSeenAt?: number; lastSeenAt?: number; lastOfflineAt?: number; accessToken?: { id: string; name: string; status: TokenStatus }; stats?: DeviceStats }
 export interface Session { id: string; hostId: string; quality: Quality; expiresAt: number; mode?: 'desktop' | 'tools'; tools?: boolean; audio?: boolean; readOnly?: boolean }
 export interface IceServer { urls: string | string[]; username?: string; credential?: string }
 export type ServerMessage = Signal

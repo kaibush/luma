@@ -96,12 +96,13 @@ try {
   assert.ok(await publicPage.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   console.log('PASS: mobile drawer contains full-page links, closes on navigation; guide topics switch inside page');
   await page.goto(`${base}/management/tokens`);
-  await page.getByText('已有 Token',{exact:true}).waitFor();
+  await page.getByText('主机接入密钥',{exact:true}).waitFor();
   const sidebar=page.locator('[data-sidebar="sidebar"]').first();
   assert.equal(await sidebar.getByRole('link',{name:'系统管理',exact:true}).getAttribute('data-active'),'true');
   assert.equal(await sidebar.getByRole('link',{name:'Token 管理',exact:true}).count(),0);
   await page.getByLabel('名称',{exact:true}).fill('导航测试主机');
   await page.getByRole('button',{name:'创建 Token',exact:true}).click();
+  await page.getByRole('dialog').getByRole('button',{name:'关闭',exact:true}).click();
   await page.getByRole('row').filter({hasText:'导航测试主机'}).waitFor();
   await page.getByRole('tab',{name:'账号安全',exact:true}).click();
   await page.waitForURL(`${base}/management/account`);

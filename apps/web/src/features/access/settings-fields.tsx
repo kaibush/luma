@@ -36,13 +36,16 @@ export function SettingsFields({
             onChange({ ...value, workspaceName: e.target.value })
           }
         />
+        <FieldDescription>
+          显示在侧栏和登录页，方便确认当前工作空间。
+        </FieldDescription>
       </Field>
       <div className='grid gap-5 sm:grid-cols-2'>
         <Field>
           <FieldLabel htmlFor='default-quality'>默认画质</FieldLabel>
           <select
             id='default-quality'
-            className='h-11 rounded-md border bg-background px-3'
+            className='h-11 w-full rounded-xl border border-input bg-background px-3 text-sm'
             value={value.defaultQuality}
             onChange={(e) =>
               onChange({
@@ -75,6 +78,7 @@ export function SettingsFields({
               onChange({ ...value, sessionMinutes: Number(e.target.value) })
             }
           />
+          <FieldDescription>单次桌面会话最长 15 到 240 分钟。</FieldDescription>
         </Field>
       </div>
       <Field>

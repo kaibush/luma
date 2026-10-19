@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Host } from '@remote/protocol'
 import { Copy, Monitor, Square, Trash2, Plus, Search } from 'lucide-react'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -23,7 +24,6 @@ import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
-import { PasswordInput } from '@/components/password-input'
 import { api, sendSignal } from '@/features/remote/api'
 import { RemotePeer } from '@/features/remote/peer'
 import { shareLink, shareSocket, type Share } from './connection'
@@ -58,8 +58,10 @@ function ShareCard({
   onPermission: (permission: 'view' | 'control') => void
 }) {
   const [panel, setPanel] = useState<'link' | 'edit' | 'delete' | null>(null)
+  const [editTab, setEditTab] = useState('permission')
   const [expiry, setExpiry] = useState(localDate(share.expiresAt))
   const [key, setKey] = useState('')
+  const [codeEditable, setCodeEditable] = useState(false)
   useEffect(() => setExpiry(localDate(share.expiresAt)), [share.expiresAt])
   const expired = share.expiresAt !== null && share.expiresAt <= Date.now()
   const status = expired
@@ -84,7 +86,16 @@ function ShareCard({
     <>
       <article className='flex flex-col gap-3 rounded-xl border bg-card p-4 sm:flex-row sm:items-center sm:justify-between'>
         <div className='flex min-w-0 items-center gap-3'>
-          <div className='flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted'>
+          <div
+            className={cn(
+              'flex size-10 shrink-0 items-center justify-center rounded-lg',
+              status === '分享中'
+                ? 'bg-success-soft text-success'
+                : status === '等待上线'
+                  ? 'bg-warning-soft text-warning'
+                  : 'bg-muted text-muted-foreground'
+            )}
+          >
             <Monitor className='size-5' />
           </div>
           <div className='min-w-0'>
@@ -112,7 +123,16 @@ function ShareCard({
           <Button variant='outline' size='sm' onClick={() => setPanel('link')}>
             链接
           </Button>
-          <Button variant='outline' size='sm' onClick={() => setPanel('edit')}>
+          <Button
+            variant='outline'
+            size='sm'
+            onClick={() => {
+              setEditTab('permission')
+              setKey('')
+              setCodeEditable(false)
+              setPanel('edit')
+            }}
+          >
             管理
           </Button>
           {(!share.hostId || !share.enabled) && (
@@ -157,42 +177,58 @@ function ShareCard({
             </DialogDescription>
           </DialogHeader>
           {panel === 'link' && (
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor={`link-${share.id}`}>
-                  {share.hostId
-                    ? '分享链接（不含分享码）'
-                    : '观看链接（包含密钥）'}
-                </FieldLabel>
-                <Input
-                  id={`link-${share.id}`}
-                  readOnly
-                  value={shareLink(share)}
-                  onFocus={(e) => e.target.select()}
-                />
-              </Field>
-              {share.hostId && (
+            <>
+              <FieldGroup>
                 <Field>
-                  <FieldLabel htmlFor={`code-${share.id}`}>
-                    当前分享码
+                  <FieldLabel htmlFor={`link-${share.id}`}>
+                    {share.hostId
+                      ? '分享链接（不含分享码）'
+                      : '观看链接（包含密钥）'}
                   </FieldLabel>
                   <Input
-                    id={`code-${share.id}`}
+                    id={`link-${share.id}`}
                     readOnly
-                    value={share.key}
+                    value={shareLink(share)}
                     onFocus={(e) => e.target.select()}
                   />
                 </Field>
-              )}
-              <Button onClick={() => void copy()}>
-                <Copy className='size-4' />
-                复制链接和分享码
-              </Button>
-            </FieldGroup>
+                {share.hostId && (
+                  <Field>
+                    <FieldLabel htmlFor={`code-${share.id}`}>
+                      当前分享码
+                    </FieldLabel>
+                    <Input
+                      id={`code-${share.id}`}
+                      readOnly
+                      value={share.key}
+                      onFocus={(e) => e.target.select()}
+                    />
+                  </Field>
+                )}
+              </FieldGroup>
+              <DialogFooter>
+                <Button variant='outline' onClick={() => setPanel(null)}>
+                  关闭
+                </Button>
+                <Button onClick={() => void copy()}>
+                  <Copy className='size-4' />
+                  复制链接和分享码
+                </Button>
+              </DialogFooter>
+            </>
           )}
           {panel === 'edit' && (
             <>
-              <Tabs defaultValue='permission'>
+              <Tabs
+                value={editTab}
+                onValueChange={(value) => {
+                  setEditTab(value)
+                  if (value === 'code') {
+                    setKey('')
+                    setCodeEditable(false)
+                  }
+                }}
+              >
                 <TabsList className='w-full'>
                   <TabsTrigger value='permission'>权限</TabsTrigger>
                   <TabsTrigger value='expiry'>有效期</TabsTrigger>
@@ -242,14 +278,16 @@ function ShareCard({
                         按当前设备时区设置，留空不限时。
                       </FieldDescription>
                     </Field>
-                    <Button
-                      disabled={pending}
-                      onClick={() =>
-                        onExpiry(expiry ? new Date(expiry).getTime() : null)
-                      }
-                    >
-                      保存有效期
-                    </Button>
+                    <div className='flex justify-end'>
+                      <Button
+                        disabled={pending}
+                        onClick={() =>
+                          onExpiry(expiry ? new Date(expiry).getTime() : null)
+                        }
+                      >
+                        保存有效期
+                      </Button>
+                    </div>
                   </FieldGroup>
                 </TabsContent>
                 <TabsContent value='code' className='py-3'>
@@ -258,25 +296,38 @@ function ShareCard({
                       <FieldLabel htmlFor={`key-${share.id}`}>
                         新密钥（可选）
                       </FieldLabel>
-                      <PasswordInput
+                      <Input
                         id={`key-${share.id}`}
-                        visibilityLabel='分享码'
+                        name={`new-share-code-${share.id}`}
+                        autoComplete='off'
+                        autoCorrect='off'
+                        spellCheck={false}
+                        data-1p-ignore='true'
+                        data-lpignore='true'
+                        data-form-type='other'
+                        readOnly={!codeEditable}
                         value={key}
+                        onFocus={(e) => {
+                          e.currentTarget.readOnly = false
+                          setCodeEditable(true)
+                        }}
                         onChange={(e) => setKey(e.target.value)}
                         minLength={6}
                         maxLength={128}
                         placeholder='留空随机生成，或输入至少 6 位'
                       />
                     </Field>
-                    <Button
-                      disabled={pending}
-                      onClick={() => {
-                        onAction(share, 'rotate', key || undefined)
-                        setKey('')
-                      }}
-                    >
-                      更换密钥
-                    </Button>
+                    <div className='flex justify-end'>
+                      <Button
+                        disabled={pending}
+                        onClick={() => {
+                          onAction(share, 'rotate', key || undefined)
+                          setKey('')
+                        }}
+                      >
+                        更换分享码
+                      </Button>
+                    </div>
                   </FieldGroup>
                 </TabsContent>
               </Tabs>
@@ -361,7 +412,9 @@ export function ScreenShares() {
     ])
     if (mounted.current) {
       setShares(result.shares)
-      setHosts(devices.hosts.filter((h) => h.capabilities.remoteSharing))
+      setHosts(
+        devices.hosts.filter((h) => h.online && h.capabilities.remoteSharing)
+      )
     }
   }
   const stopCapture = () => {
@@ -570,7 +623,7 @@ export function ScreenShares() {
       <Main className='flex flex-col gap-5'>
         <div className='flex items-center justify-between gap-4'>
           <div>
-            <h1 className='text-2xl font-semibold'>屏幕共享</h1>
+            <h1 className='text-2xl font-semibold tracking-tight'>屏幕共享</h1>
             <p className='mt-1 text-sm text-muted-foreground'>
               {shares.length} 个分享 ·{' '}
               {shares.reduce((n, s) => n + s.viewers, 0)} 位访客在线
@@ -593,6 +646,10 @@ export function ScreenShares() {
             <Search className='size-4 shrink-0 text-muted-foreground' />
             <Input
               aria-label='搜索分享'
+              name='share-search'
+              autoComplete='off'
+              autoCorrect='off'
+              spellCheck={false}
               placeholder='搜索分享名称'
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -741,10 +798,20 @@ export function ScreenShares() {
                     留空表示不限时。到期后链接失效，已有观看者也会断开。
                   </FieldDescription>
                 </Field>
-                <Button disabled={pending} type='submit'>
-                  创建共享并生成密钥
-                </Button>
               </FieldGroup>
+              <DialogFooter>
+                <Button
+                  type='button'
+                  variant='outline'
+                  disabled={pending}
+                  onClick={() => setCreating(false)}
+                >
+                  取消
+                </Button>
+                <Button disabled={pending} type='submit'>
+                  创建分享
+                </Button>
+              </DialogFooter>
             </form>
             {error && (
               <p role='alert' className='text-sm text-destructive'>

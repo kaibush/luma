@@ -1,6 +1,6 @@
 /* Blue workspace theme, with shared semantic colors for every surface. */
 :root {
-  --radius: 1rem;
+  --radius: 0.75rem;
   --background: #ffffff;
   --foreground: #202c40;
   --card: #ffffff;
@@ -9,11 +9,11 @@
   --popover-foreground: var(--foreground);
   --primary: #1673c9;
   --primary-foreground: #ffffff;
-  --secondary: #eaf3fd;
+  --secondary: #e8f3ff;
   --secondary-foreground: #155a9a;
   --muted: #f0f3f8;
   --muted-foreground: #64748b;
-  --accent: #eaf3fd;
+  --accent: #e8f3ff;
   --accent-foreground: #155a9a;
   --destructive: #d43d51;
   --border: #e3e9f1;
@@ -33,7 +33,7 @@
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
   --sidebar-accent: var(--accent);
-  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-accent-foreground: var(--foreground);
   --sidebar-border: var(--border);
   --sidebar-ring: var(--ring);
 }

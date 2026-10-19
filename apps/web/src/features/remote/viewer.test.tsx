@@ -32,6 +32,7 @@ test('touchpad swipes move without holding left, taps click cursor, direct mode 
         id: 'host',
         name: 'Test desktop',
         busy: false,
+        online: true,
         kind: 'linux-x11',
         capabilities: { video: true, systemInput: true },
       }}
@@ -176,6 +177,7 @@ test('mobile keyboard sends chords in order, restores tools after fullscreen fal
         id: 'host',
         name: '本机 Linux 桌面',
         busy: false,
+        online: true,
         kind: 'linux-x11',
         capabilities: { video: true, systemInput: true, textInput: 'ascii' },
       }}
@@ -298,6 +300,7 @@ test('landscape keyboard respects panel width and iPhone safe areas', async () =
         id: 'layout',
         name: '本机 Linux 桌面',
         busy: false,
+        online: true,
         kind: 'linux-x11',
         capabilities: { video: true, systemInput: true },
       }}

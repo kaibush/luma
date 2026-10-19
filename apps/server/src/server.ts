@@ -44,25 +44,45 @@ export async function createApp(config: Config) {
     send(s.controller, { type: 'ended', reason });
     s.controller?.close(1000, reason);
   };
+  const hostList = (): Host[] => store.hosts().map(record => {
+    const live = hosts.get(record.id);
+    if (!live || live.ws.readyState !== WebSocket.OPEN || record.accessToken?.status !== 'active') return record;
+    return { ...record, ...live.info, ...store.hostMetadata(record.id), name: record.name, reportedName: record.reportedName, accessToken: record.accessToken, online: true };
+  });
   registerAdmin(app, store, config, principal => {
+    for (const [id, session] of sessions) if (principal ? session.owner.kind === principal.kind && session.owner.id === principal.id : session.owner.kind === 'session') end(id, '授权已撤销');
+    for (const [id, host] of hosts) {
+      const auth = principals.get(host.ws);
+      if (principal && auth?.kind === principal.kind && auth.id === principal.id) offlineHost(id, host.ws);
+    }
     for (const [ws, auth] of principals) if (principal ? auth.kind === principal.kind && auth.id === principal.id : auth.kind === 'session') ws.close(1008, 'Authorization revoked');
-  }, () => [...sessions.values()].map(s => ({ ...s.info, hostName: hosts.get(s.info.hostId)?.info.name || '离线主机', connected: !!s.controller })));
+  }, () => [...sessions.values()].map(s => ({ ...s.info, hostName: store.hostName(s.info.hostId, hosts.get(s.info.hostId)?.info.name || '离线主机'), connected: !!s.controller })), hostList);
   const shares = registerShares(app, store, config.origins, iceServers, hosts);
+  const offlineHost = (id: string, ws: WebSocket) => {
+    const host = hosts.get(id);
+    // A delayed close from an old socket must not remove its replacement.
+    if (!host || host.ws !== ws) return;
+    store.observeHost(host.info, true);
+    hosts.delete(id);
+    shares.offline(id);
+    for (const [sessionId, session] of sessions) if (session.info.hostId === id) end(sessionId, '主机已离线');
+  };
   app.get('/health', async () => ({ ok: true }));
-  app.get('/api/hosts', async () => ({ hosts: [...hosts.values()].map(h => h.info) }));
+  app.get('/api/hosts', async () => ({ hosts: hostList() }));
   app.put<{ Params: { id: string } }>('/api/hosts/:id', async (req, reply) => {
-    const parsed = hostMetadataSchema.safeParse(req.body), host = hosts.get(req.params.id);
+    const parsed = hostMetadataSchema.safeParse(req.body), host = hostList().find(host => host.id === req.params.id);
     if (!parsed.success) return reply.code(400).send({ error: '分组或备注无效' });
-    if (!host) return reply.code(404).send({ error: '主机已离线' });
-    const meta = { ...store.hostMetadata(host.info.id), ...parsed.data };
-    store.saveHostMetadata(host.info.id, meta); Object.assign(host.info, meta);
-    return { host: host.info };
+    if (!host) return reply.code(404).send({ error: '主机不存在' });
+    const meta = { ...store.hostMetadata(host.id), ...parsed.data };
+    store.saveHostMetadata(host.id, meta);
+    const live = hosts.get(host.id); if (live) Object.assign(live.info, meta);
+    return { host: { ...host, ...meta } };
   });
   app.post<{ Body: { hostId?: string; quality?: string; mode?: string; audio?: boolean } }>('/api/sessions', async (req, reply) => {
     const quality = qualitySchema.safeParse(req.body?.quality ?? store.settings().defaultQuality);
     if (!quality.success || typeof req.body?.hostId !== 'string') return reply.code(400).send({ error: '会话参数无效' });
     const host = hosts.get(req.body.hostId);
-    if (!host) return reply.code(404).send({ error: '主机已离线' });
+    if (!host || host.ws.readyState !== WebSocket.OPEN || !store.valid(principals.get(host.ws)!)) return reply.code(404).send({ error: '主机已离线，请检查客户端连接及主机密钥状态' });
     if (host.info.busy) return reply.code(409).send({ error: '主机正在使用中' });
     const mode = req.body.mode ?? 'desktop';
     if (!['desktop', 'tools'].includes(mode) || (req.body.audio !== undefined && typeof req.body.audio !== 'boolean')) return reply.code(400).send({ error: '会话模式无效' });
@@ -73,7 +93,7 @@ export async function createApp(config: Config) {
     sessions.set(info.id, { info, started: false, owner: req.principal! });
     const metadata = { ...store.hostMetadata(host.info.id), lastConnectedAt: Date.now() };
     store.saveHostMetadata(host.info.id, metadata); Object.assign(host.info, metadata);
-    store.audit(req.principal!.name, 'session.start', `${host.info.name} (${mode})`);
+    store.audit(req.principal!.name, 'session.start', `${store.hostName(host.info.id, host.info.name)} (${mode})`);
     return reply.code(201).send({ session: info, iceServers: iceServers(info.id) });
   });
   app.delete<{ Params: { id: string } }>('/api/sessions/:id', async (req, reply) => { const s = sessions.get(req.params.id); if (s && (s.owner.id !== req.principal?.id || s.owner.kind !== req.principal?.kind)) return reply.code(403).send({ error: '非当前会话所有者' }); end(req.params.id, '会话已结束'); return reply.code(204).send(); });
@@ -86,9 +106,16 @@ export async function createApp(config: Config) {
   });
   wss.on('connection', (ws, request) => {
     let role: 'host' | 'controller' | undefined, hostId: string | undefined, sessionId: string | undefined;
-    let alive = true, count = 0, windowStart = Date.now();
+    let alive = true, count = 0, windowStart = Date.now(), lastPersistedAt = Date.now();
     const timeout = setTimeout(() => ws.close(1008, 'Authentication timeout'), 5000);
-    ws.on('pong', () => { alive = true; });
+    ws.on('pong', () => {
+      alive = true;
+      const host = hostId && hosts.get(hostId);
+      if (host && host.ws === ws) {
+        host.info.lastSeenAt = Date.now();
+        if (Date.now() - lastPersistedAt >= 60000) { store.observeHost(host.info); lastPersistedAt = Date.now(); }
+      }
+    });
     const heartbeat = setInterval(() => { if (!alive) ws.terminate(); else { alive = false; ws.ping(); } }, 15_000);
     ws.on('error', () => ws.terminate());
     ws.on('message', raw => {
@@ -105,8 +132,12 @@ export async function createApp(config: Config) {
         clearTimeout(timeout);
         if (auth.role === 'host') {
           role = 'host'; hostId = auth.deviceId ? createHash('sha256').update(`${principal.id}:${auth.deviceId}`).digest('hex') : randomUUID();
+          const previous = hosts.get(hostId);
+          if (previous && previous.ws.readyState !== WebSocket.OPEN) offlineHost(hostId, previous.ws);
           if (hosts.has(hostId)) { ws.close(1008, 'Device already connected'); hostId = undefined; return; }
-          hosts.set(hostId, { ws, info: { id: hostId, name: auth.name, busy: false, kind: auth.kind, ...store.hostMetadata(hostId), capabilities: { video: true, systemInput: auth.kind !== 'browser', ...auth.kind !== 'browser' ? auth.features : {}, textInput: auth.kind === 'browser' ? 'test' : auth.features?.clipboard || auth.kind === 'windows' ? 'unicode' : 'ascii', maxFps: auth.kind !== 'browser' ? 60 : undefined } } });
+          const info: Host = { id: hostId, name: auth.name, online: true, busy: false, kind: auth.kind, lastSeenAt: Date.now(), ...store.hostMetadata(hostId), capabilities: { video: true, systemInput: auth.kind !== 'browser', ...auth.kind !== 'browser' ? auth.features : {}, textInput: auth.kind === 'browser' ? 'test' : auth.features?.clipboard || auth.kind === 'windows' ? 'unicode' : 'ascii', maxFps: auth.kind !== 'browser' ? 60 : undefined } };
+          store.registerHost(info, principal.id);
+          hosts.set(hostId, { ws, info });
           send(ws, { type: 'ready', hostId, protocol: 2 });
         } else {
           const s = sessions.get(auth.sessionId), host = s && hosts.get(s.info.hostId);
@@ -122,7 +153,7 @@ export async function createApp(config: Config) {
       if (role === 'host' && data && typeof data === 'object' && 'type' in data && data.type === 'stats') {
         const stats = deviceStatsSchema.safeParse('stats' in data ? data.stats : null);
         const host = hosts.get(hostId!);
-        if (stats.success && host) host.info.stats = { ...stats.data, sampledAt: Date.now() };
+        if (stats.success && host) { host.info.lastSeenAt = Date.now(); host.info.stats = { ...stats.data, sampledAt: Date.now() }; }
         return;
       }
       if (role === 'host' && shares.fromHost(hostId!, data)) return;
@@ -145,11 +176,11 @@ export async function createApp(config: Config) {
     ws.on('close', () => {
       principals.delete(ws);
       clearTimeout(timeout); clearInterval(heartbeat);
-      if (hostId) { const s = [...sessions.values()].find(s => s.info.hostId === hostId); hosts.delete(hostId); shares.offline(hostId); if (s) end(s.info.id, '主机已离线'); }
+      if (hostId) offlineHost(hostId, ws);
       if (sessionId) end(sessionId, '控制端已断开');
     });
   });
-  const reap = setInterval(() => { for (const [ws, principal] of principals) if (!store.valid(principal)) ws.close(1008, 'Authorization expired'); for (const [id, s] of sessions) if (s.info.expiresAt <= Date.now()) end(id, '会话已过期'); }, 5000);
+  const reap = setInterval(() => { for (const [id, host] of hosts) if (!store.valid(principals.get(host.ws)!)) offlineHost(id, host.ws); for (const [ws, principal] of principals) if (!store.valid(principal)) ws.close(1008, 'Authorization expired'); for (const [id, s] of sessions) if (s.info.expiresAt <= Date.now()) end(id, '会话已过期'); }, 5000);
   app.addHook('preClose', async () => { clearInterval(reap); for (const ws of wss.clients) ws.terminate(); await new Promise<void>(resolve => wss.close(() => resolve())); });
   app.addHook('onClose', async () => { store.close(); });
   return app;

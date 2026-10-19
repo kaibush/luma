@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from '@tanstack/react-router'
 import {
   qualityProfiles,
   type Host,
@@ -7,7 +8,6 @@ import {
   type Session,
 } from '@remote/protocol'
 import {
-  ArrowUpRight,
   Monitor,
   Radio,
   RefreshCw,
@@ -19,6 +19,7 @@ import {
   Globe,
   Sparkles,
 } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -46,6 +47,7 @@ import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { useRemoteAuth, request } from '@/features/access/auth'
 import { api } from './api'
+import { hostOfflineHint } from './host-status'
 import { HostWorkspace } from './host-workspace'
 import { ReconnectingViewer as Viewer } from './reconnecting-viewer'
 
@@ -175,13 +177,15 @@ export function RemoteDashboard() {
         matches &&
         (!groupFilter || host.group === groupFilter) &&
         (filter !== 'favorites' || favorites.includes(favoriteKey(host))) &&
-        (filter !== 'available' || !host.busy)
+        (filter !== 'available' || (host.online && !host.busy)) &&
+        (filter !== 'offline' || !host.online)
       )
     })
     .sort(
       (a, b) =>
         Number(favorites.includes(favoriteKey(b))) -
           Number(favorites.includes(favoriteKey(a))) ||
+        Number(b.online) - Number(a.online) ||
         (b.lastConnectedAt || 0) - (a.lastConnectedAt || 0)
     )
   return (
@@ -197,41 +201,44 @@ export function RemoteDashboard() {
         </div>
       </Header>
       <Main id='content' tabIndex={-1} className='flex flex-col gap-6'>
-        <div className='dashboard-welcome flex flex-wrap items-center justify-between gap-5 rounded-2xl p-5 sm:p-7'>
-          <div className='flex flex-col gap-2'>
-            <p className='text-sm text-muted-foreground'>
-              YOUR WORKSPACE · 你的工作空间
-            </p>
-            <h1 className='text-3xl font-semibold tracking-tight'>远程桌面</h1>
-            <p className='text-muted-foreground'>
-              桌面随行，工作随心。连接你的电脑，从这里继续。
-            </p>
+        <div className='flex flex-wrap items-center justify-between gap-5 rounded-2xl border bg-card p-5 sm:p-6'>
+          <div className='flex items-start gap-4'>
+            <span className='flex size-12 shrink-0 items-center justify-center rounded-2xl bg-secondary text-primary'>
+              <Monitor className='size-6' />
+            </span>
+            <div className='flex flex-col gap-1'>
+              <h1 className='text-2xl font-semibold tracking-tight'>
+                我的主机
+              </h1>
+              <p className='max-w-xl text-sm leading-6 text-muted-foreground'>
+                选择画质后连接在线电脑。收藏和筛选只保存在这台浏览器上。
+              </p>
+            </div>
           </div>
-          <Button asChild variant='outline'>
-            <a href='/host' target='_blank' rel='noreferrer'>
-              <Monitor data-icon='inline-start' />
+          <Button asChild>
+            <Link to='/connect'>
+              <Radio data-icon='inline-start' />
               接入此电脑
-              <ArrowUpRight data-icon='inline-end' />
-            </a>
+            </Link>
           </Button>
         </div>
         <div className='grid grid-cols-3 gap-3'>
           {[
             {
               label: '在线主机',
-              value: hosts.length,
+              value: hosts.filter((h) => h.online).length,
               icon: Monitor,
               tone: 'blue',
             },
             {
               label: '可连接',
-              value: hosts.filter((h) => !h.busy).length,
+              value: hosts.filter((h) => h.online && !h.busy).length,
               icon: CircleCheck,
               tone: 'green',
             },
             {
-              label: '使用中',
-              value: hosts.filter((h) => h.busy).length,
+              label: '离线主机',
+              value: hosts.filter((h) => !h.online).length,
               icon: Activity,
               tone: 'purple',
             },
@@ -295,7 +302,7 @@ export function RemoteDashboard() {
             <div>
               <h2 className='text-xl font-semibold'>我的主机</h2>
               <p className='text-sm text-muted-foreground'>
-                选择在线主机，开始远程会话。
+                在线主机可连接，离线主机保留档案并等待重新接入。
               </p>
             </div>
             {state.user && (
@@ -396,6 +403,7 @@ export function RemoteDashboard() {
             >
               <ToggleGroupItem value='all'>全部</ToggleGroupItem>
               <ToggleGroupItem value='available'>可连接</ToggleGroupItem>
+              <ToggleGroupItem value='offline'>离线</ToggleGroupItem>
               <ToggleGroupItem value='favorites'>
                 <Star />
                 收藏
@@ -414,7 +422,7 @@ export function RemoteDashboard() {
                 <EmptyMedia variant='icon'>
                   <Monitor />
                 </EmptyMedia>
-                <EmptyTitle>还没有在线主机</EmptyTitle>
+                <EmptyTitle>还没有主机记录</EmptyTitle>
                 <EmptyDescription>
                   等待系统主机端上线，或在被控电脑打开「接入此电脑」进行浏览器共享。
                 </EmptyDescription>
@@ -451,7 +459,16 @@ export function RemoteDashboard() {
                 >
                   <CardHeader>
                     <div className='mb-3 flex items-center justify-between'>
-                      <span className='flex size-12 items-center justify-center rounded-xl bg-accent text-primary'>
+                      <span
+                        className={cn(
+                          'flex size-12 items-center justify-center rounded-xl',
+                          !host.online
+                            ? 'bg-muted text-muted-foreground'
+                            : host.busy
+                              ? 'bg-warning-soft text-warning'
+                              : 'bg-success-soft text-success'
+                        )}
+                      >
                         <Monitor className='size-6' />
                       </span>
                       <div className='flex items-center gap-2'>
@@ -464,8 +481,20 @@ export function RemoteDashboard() {
                         >
                           <Star className='favorite-star' />
                         </Button>
-                        <Badge variant={host.busy ? 'warning' : 'success'}>
-                          {host.busy ? '使用中' : '在线'}
+                        <Badge
+                          variant={
+                            !host.online
+                              ? 'secondary'
+                              : host.busy
+                                ? 'warning'
+                                : 'success'
+                          }
+                        >
+                          {!host.online
+                            ? '离线'
+                            : host.busy
+                              ? '使用中'
+                              : '在线'}
                         </Badge>
                       </div>
                     </div>
@@ -475,7 +504,7 @@ export function RemoteDashboard() {
                         ? 'Linux 系统桌面 · 实时控制'
                         : host.kind === 'windows'
                           ? 'Windows 桌面 · 实时控制'
-                          : '浏览器共享端 · 视频与输入测试'}
+                          : '临时浏览器 · 画面观看'}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -483,6 +512,27 @@ export function RemoteDashboard() {
                       {host.group || '未分组'}
                       {host.note ? ` · ${host.note}` : ''}
                     </p>
+                    {host.accessToken && (
+                      <p className='mb-2 text-sm text-muted-foreground'>
+                        主机密钥：{host.accessToken.name}
+                      </p>
+                    )}
+                    {!host.online && (
+                      <div className='mb-3 flex flex-col gap-2 text-sm'>
+                        <p>
+                          最近在线：
+                          {host.lastSeenAt
+                            ? new Date(host.lastSeenAt).toLocaleString()
+                            : '未知'}
+                        </p>
+                        <p>{hostOfflineHint(host)}</p>
+                        {host.accessToken?.status !== 'active' && (
+                          <a href='/management/tokens' className='underline'>
+                            管理主机密钥
+                          </a>
+                        )}
+                      </div>
+                    )}
                     {host.stats && (
                       <p className='mb-2 text-sm'>
                         CPU {host.stats.cpu.toFixed(0)}% · 内存{' '}
@@ -496,7 +546,8 @@ export function RemoteDashboard() {
                           100
                         ).toFixed(0)}
                         %
-                        {Date.now() - host.stats.sampledAt > 15000
+                        {!host.online ||
+                        Date.now() - host.stats.sampledAt > 15000
                           ? '（已过期）'
                           : ''}
                       </p>
@@ -506,11 +557,11 @@ export function RemoteDashboard() {
                         ? host.kind === 'windows'
                           ? '支持普通桌面的鼠标、键盘与文本输入。锁屏和 UAC 安全桌面不可操作。'
                           : '支持系统鼠标、键盘与英文文本。卡顿时建议选择 540p 或 360p。'
-                        : '支持实时画面；此浏览器共享端仅用于输入测试。'}
+                        : '观看共享画面。浏览器无法操作本机系统鼠标和键盘。'}
                     </p>
                   </CardContent>
                   <CardFooter className='flex flex-col gap-2'>
-                    {host.capabilities.remoteSharing && (
+                    {host.online && host.capabilities.remoteSharing && (
                       <Button
                         variant='outline'
                         className='w-full'
@@ -526,15 +577,23 @@ export function RemoteDashboard() {
                       className='w-full'
                       onClick={() => setWorkspace(host)}
                     >
-                      状态 / 终端 / 文件
+                      {host.online
+                        ? '状态 / 终端 / 文件'
+                        : '查看档案 / 编辑备注'}
                     </Button>
                     <Button
                       className='w-full'
-                      disabled={host.busy || loading}
+                      disabled={!host.online || host.busy || loading}
                       onClick={() => void connect(host)}
                     >
                       <Radio data-icon='inline-start' />
-                      {host.busy ? '已有活动会话' : '连接桌面'}
+                      {!host.online
+                        ? '主机离线'
+                        : host.busy
+                          ? '已有活动会话'
+                          : host.kind === 'browser'
+                            ? '观看画面'
+                            : '连接桌面'}
                     </Button>
                   </CardFooter>
                 </Card>
@@ -547,7 +606,7 @@ export function RemoteDashboard() {
           <AlertTitle>连接你的实际桌面</AlertTitle>
           <AlertDescription>
             安装 Linux 或 Windows
-            客户端后即可查看并操作对应电脑。浏览器共享端仅用于画面与链路测试。
+            客户端后即可查看并操作对应电脑。临时浏览器接入可分享画面，停止后需要重新选择屏幕。
           </AlertDescription>
         </Alert>
       </Main>
