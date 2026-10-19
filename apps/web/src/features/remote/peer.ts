@@ -43,6 +43,8 @@ export class RemotePeer {
   private reliable?: RTCDataChannel
   private motion?: RTCDataChannel
   private pendingIce: RTCIceCandidateInit[] = []
+  private localIce: Extract<Signal, { type: 'ice' }>[] = []
+  private descriptionSent = false
   private timer: ReturnType<typeof setInterval>
   private last?: { timestamp: number; bytes: number }
   private closed = false
@@ -54,14 +56,17 @@ export class RemotePeer {
       bundlePolicy: 'max-bundle',
     })
     this.pc.onicecandidate = (e) => {
-      if (e.candidate)
-        options.signal({
+      if (e.candidate && !this.closed) {
+        const signal: Extract<Signal, { type: 'ice' }> = {
           type: 'ice',
           candidate: e.candidate.toJSON() as Extract<
             Signal,
             { type: 'ice' }
           >['candidate'],
-        })
+        }
+        if (this.descriptionSent) options.signal(signal)
+        else this.localIce.push(signal)
+      }
     }
     this.pc.onconnectionstatechange = () => {
       options.onState(this.pc.connectionState)
@@ -166,7 +171,13 @@ export class RemotePeer {
     const offer = await this.pc.createOffer()
     if (this.closed) return
     await this.pc.setLocalDescription(offer)
-    this.options.signal({ type: 'offer', sdp: offer.sdp! })
+    this.sendDescription('offer', offer.sdp!)
+  }
+  private sendDescription(type: 'offer' | 'answer', sdp: string) {
+    if (this.closed) return
+    this.options.signal({ type, sdp })
+    this.descriptionSent = true
+    for (const signal of this.localIce.splice(0)) this.options.signal(signal)
   }
   handle(signal: Signal) {
     this.queue = this.queue
@@ -194,10 +205,12 @@ export class RemotePeer {
                   params.encodings[0].maxBitrate = profile.maxBitrate
                   params.encodings[0].maxFramerate = profile.fps
                   params.degradationPreference = 'maintain-framerate'
-                  await sender.setParameters(params)
+                  // Optional quality caps are unsupported in some browsers.
+                  // Their failure must not prevent sending the SDP answer.
+                  await sender.setParameters(params).catch(() => {})
                 }
               }
-            this.options.signal({ type: 'answer', sdp: answer.sdp! })
+            this.sendDescription('answer', answer.sdp!)
           }
         }
       })
@@ -254,6 +267,8 @@ export class RemotePeer {
   close() {
     if (this.closed) return
     this.closed = true
+    this.localIce = []
+    this.pendingIce = []
     if (
       this.reliable?.readyState === 'open' &&
       this.reliable.bufferedAmount < 64 * 1024

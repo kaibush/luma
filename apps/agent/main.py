@@ -46,12 +46,14 @@ class Agent:
         self.window = time.monotonic()
         self.queue = asyncio.Queue(maxsize=128)
         self.motion = None
+        self.pending_ice = []
 
     async def send(self, message):
         await self.ws.send(json.dumps(message))
 
     async def stop_session(self):
         self.session = None
+        self.pending_ice.clear()
         if self.tools:
             await self.tools.close(); self.tools = None
         if self.audio:
@@ -237,6 +239,11 @@ class Agent:
         kind = message['type']
         if kind == 'offer':
             await self.pc.setRemoteDescription(RTCSessionDescription(sdp=message['sdp'], type='offer'))
+            # Trickle ICE can arrive before SDP; aiortc cannot associate it
+            # with a transport until the remote description has been applied.
+            for candidate in self.pending_ice:
+                await self.pc.addIceCandidate(candidate)
+            self.pending_ice.clear()
             answer = await self.pc.createAnswer()
             await self.pc.setLocalDescription(answer)
             await self.send({'type': 'answer', 'sessionId': self.session, 'sdp': self.pc.localDescription.sdp})
@@ -245,7 +252,12 @@ class Agent:
             candidate = candidate_from_sdp(raw_candidate['candidate'].removeprefix('candidate:'))
             candidate.sdpMid = raw_candidate.get('sdpMid')
             candidate.sdpMLineIndex = raw_candidate.get('sdpMLineIndex')
-            await self.pc.addIceCandidate(candidate)
+            if self.pc.remoteDescription is None:
+                if len(self.pending_ice) >= 128:
+                    raise ValueError('Too many pending ICE candidates')
+                self.pending_ice.append(candidate)
+            else:
+                await self.pc.addIceCandidate(candidate)
 
 
 
