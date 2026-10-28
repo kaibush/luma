@@ -1,11 +1,7 @@
 import { useState } from 'react'
-import {
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  Monitor,
-  ShieldCheck,
-} from 'lucide-react'
+import { APP_NAME, getWorkspaceName } from '@/config/branding'
+import { ArrowLeft, ArrowRight, Check, ShieldCheck } from 'lucide-react'
+import { Logo } from '@/assets/logo'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -38,7 +34,7 @@ export function SetupPage() {
     [confirm, setConfirm] = useState(''),
     [secret, setSecret] = useState('')
   const [settings, setSettings] = useState<ConnectionSettings>({
-    workspaceName: 'Remote Console',
+    workspaceName: APP_NAME,
     defaultQuality: 'responsive',
     sessionMinutes: 240,
     stunUrl: '',
@@ -55,7 +51,10 @@ export function SetupPage() {
           '/auth/setup/unlock',
           { key }
         )
-        setSettings(result.settings)
+        setSettings({
+          ...result.settings,
+          workspaceName: getWorkspaceName(result.settings.workspaceName),
+        })
         setKey('')
         setStep(1)
       } else if (step === 1) {
@@ -88,8 +87,8 @@ export function SetupPage() {
   return (
     <main className='mx-auto flex min-h-svh max-w-3xl flex-col gap-6 px-4 py-8 sm:py-12'>
       <div className='flex items-center gap-3'>
-        <Monitor className='size-7' />
-        <span className='font-semibold'>Remote Console</span>
+        <Logo className='size-7' alt='' />
+        <span className='font-semibold'>{APP_NAME}</span>
         <Badge variant='secondary'>首次初始化</Badge>
       </div>
       <div>

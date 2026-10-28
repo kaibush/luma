@@ -75,7 +75,7 @@ try {
   await publisher.getByRole('button', { name: '停止共享', exact: true }).click()
   await dashboard.getByRole('button', { name: '刷新', exact: true }).click()
   await card.getByText('离线', { exact: true }).waitFor()
-  assert.equal(await card.getByRole('button', { name: '主机离线', exact: true }).isDisabled(), true)
+  assert.equal(await card.getByRole('button', { name: '重新共享', exact: true }).isEnabled(), true)
   await card.getByText('验收组 · 应保留的主机备注', { exact: true }).waitFor()
   await card.getByRole('button', { name: '查看档案 / 编辑备注' }).click()
   await dashboard.getByLabel('备注', { exact: true }).fill('离线也能编辑')

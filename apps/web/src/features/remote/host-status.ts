@@ -8,6 +8,6 @@ export function hostOfflineHint(host: Host) {
   if (host.accessToken?.status === 'deleted')
     return '主机密钥已删除。请创建新的主机密钥，并更新客户端配置。'
   return host.kind === 'browser'
-    ? '浏览器共享已停止。请在原浏览器页面重新选择屏幕并上线。'
+    ? '浏览器共享已停止。点击「重新共享」，在原电脑上重新选择屏幕；不用的档案可以删除。'
     : '请确认电脑已开机、客户端正在运行且网络可用；客户端会自动重连。'
 }

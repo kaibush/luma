@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from 'react'
 import { Navigate, useLocation } from '@tanstack/react-router'
+import { getWorkspaceName } from '@/config/branding'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -127,7 +128,16 @@ export function AuthRoot({ children }: { children: ReactNode }) {
       content = <Navigate to='/' replace />
   }
   return (
-    <Context.Provider value={{ state, refresh, logout }}>
+    <Context.Provider
+      value={{
+        state: {
+          ...state,
+          workspaceName: getWorkspaceName(state.workspaceName),
+        },
+        refresh,
+        logout,
+      }}
+    >
       {content}
     </Context.Provider>
   )

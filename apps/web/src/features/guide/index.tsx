@@ -25,7 +25,7 @@ export function GuidePage({ topic }: { topic?: string }) {
           使用指南{article ? ` / ${article.title}` : ''}
         </span>
       </Header>
-      <Main className='mx-auto flex w-full max-w-5xl flex-col gap-6 pb-10'>
+      <Main className='flex flex-col gap-6 pb-10'>
         <div className='flex flex-wrap items-center justify-between gap-3'>
           <div>
             <h1 className='text-2xl font-semibold'>

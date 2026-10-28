@@ -27,6 +27,8 @@ quality: `responsive` / `balanced` / `sharp`，默认 responsive。主机离线�
 
 每连接消息上限 100/s，64KiB 最大帧，SDP 上限 48KB。服务器每 15s ping，未收到 pong 则在下次检查终止。WSS 只承载控制信令，不承载视频与高频输入。
 
+恢复离线浏览器档案时，主机 auth 可附带 `resumeHostId`。服务端只允许 `kind: "browser"` 恢复同一主机 Token 关联的浏览器档案，保留原 ID 和元数据；不存在、已删除、类型或密钥不匹配时以 1008 / `Host unavailable` 关闭连接，已在线时以 `Device already connected` 拒绝。原生客户端不能通过此字段改变设备身份。选屏前可向 `POST /api/auth/host-token/verify` 提交 `{ token, resumeHostId }` 检查是否可恢复，并取得原上报名称；选屏后的 WebSocket 注册仍会再次核对。
+
 ## WebRTC 输入
 
 `input` 通道 ordered/reliable，`motion` 通道 unordered/maxRetransmits=0。所有消息为 JSON，坐标是可见视频画面中的 [0,1] 归一值。按钮携带自身坐标，不能依赖另一通道的最后一次 move 顺序。

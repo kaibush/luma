@@ -131,7 +131,14 @@ export async function createApp(config: Config) {
         principals.set(ws, principal);
         clearTimeout(timeout);
         if (auth.role === 'host') {
+          if (auth.resumeHostId) {
+            const archived = store.hosts().find(host => host.id === auth.resumeHostId);
+            if (auth.kind !== 'browser' || archived?.kind !== 'browser' || archived.accessToken?.id !== principal.id) {
+              ws.close(1008, 'Host unavailable'); return;
+            }
+          }
           role = 'host'; hostId = auth.deviceId ? createHash('sha256').update(`${principal.id}:${auth.deviceId}`).digest('hex') : randomUUID();
+          if (auth.resumeHostId) hostId = auth.resumeHostId;
           const previous = hosts.get(hostId);
           if (previous && previous.ws.readyState !== WebSocket.OPEN) offlineHost(hostId, previous.ws);
           if (hosts.has(hostId)) { ws.close(1008, 'Device already connected'); hostId = undefined; return; }

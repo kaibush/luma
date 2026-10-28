@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Monitor } from 'lucide-react'
+import { Logo } from '@/assets/logo'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
@@ -37,9 +37,7 @@ export function LoginPage() {
   return (
     <main className='mx-auto flex min-h-svh max-w-md flex-col justify-center gap-8 bg-background p-6'>
       <div className='flex flex-col items-center gap-3 text-center'>
-        <span className='flex size-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground'>
-          <Monitor className='size-7' />
-        </span>
+        <Logo className='size-14' alt='' />
         <div>
           <h1 className='text-2xl font-semibold'>{state.workspaceName}</h1>
           <p className='mt-1 text-sm text-muted-foreground'>

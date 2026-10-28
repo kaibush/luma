@@ -47,6 +47,7 @@ import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { useRemoteAuth, request } from '@/features/access/auth'
 import { api } from './api'
+import { DeleteHostButton, ResumeBrowserHostButton } from './host-actions'
 import { hostOfflineHint } from './host-status'
 import { HostWorkspace } from './host-workspace'
 import { ReconnectingViewer as Viewer } from './reconnecting-viewer'
@@ -77,7 +78,7 @@ export function RemoteDashboard() {
       document
         .getElementById('host-workspace')
         ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }, [workspace?.id])
+  }, [workspace])
   const [groupFilter, setGroupFilter] = useState('')
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('all')
@@ -99,6 +100,22 @@ export function RemoteDashboard() {
     }
   }
   const [hosts, setHosts] = useState<Host[]>([])
+  const [checkedAt, setCheckedAt] = useState(() => Date.now())
+  const hostsVersion = useRef(0)
+  const onHostDeleted = (id: string) => {
+    hostsVersion.current++
+    setHosts((items) => items.filter((host) => host.id !== id))
+    setWorkspace((current) => (current?.id === id ? null : current))
+    setFavorites((items) => {
+      const next = items.filter((item) => item !== id)
+      try {
+        localStorage.setItem(favoritesStorageKey, JSON.stringify(next))
+      } catch {
+        /* Session only. */
+      }
+      return next
+    })
+  }
   const [loading, setLoading] = useState(false),
     [error, setError] = useState(''),
     [quality, setQuality] = useState<Quality>('responsive')
@@ -110,10 +127,12 @@ export function RemoteDashboard() {
   useEffect(() => {
     let disposed = false
     const refresh = async () => {
+      const version = hostsVersion.current
       try {
         const result = await api<{ hosts: Host[] }>('/hosts', token)
-        if (!disposed) {
+        if (!disposed && version === hostsVersion.current) {
           setHosts(result.hosts)
+          setCheckedAt(Date.now())
           setError('')
         }
       } catch (e) {
@@ -133,10 +152,14 @@ export function RemoteDashboard() {
     }
   }, [token])
   const refresh = async () => {
+    const version = hostsVersion.current
     setLoading(true)
     try {
       const data = await api<{ hosts: Host[] }>('/hosts', token)
-      setHosts(data.hosts)
+      if (version === hostsVersion.current) {
+        setHosts(data.hosts)
+        setCheckedAt(Date.now())
+      }
       setError('')
     } catch (e) {
       setError((e as Error).message)
@@ -472,6 +495,10 @@ export function RemoteDashboard() {
                         <Monitor className='size-6' />
                       </span>
                       <div className='flex items-center gap-2'>
+                        <DeleteHostButton
+                          host={host}
+                          onDeleted={onHostDeleted}
+                        />
                         <Button
                           variant='ghost'
                           size='icon'
@@ -547,7 +574,7 @@ export function RemoteDashboard() {
                         ).toFixed(0)}
                         %
                         {!host.online ||
-                        Date.now() - host.stats.sampledAt > 15000
+                        checkedAt - host.stats.sampledAt > 15000
                           ? '（已过期）'
                           : ''}
                       </p>
@@ -581,20 +608,26 @@ export function RemoteDashboard() {
                         ? '状态 / 终端 / 文件'
                         : '查看档案 / 编辑备注'}
                     </Button>
-                    <Button
-                      className='w-full'
-                      disabled={!host.online || host.busy || loading}
-                      onClick={() => void connect(host)}
-                    >
-                      <Radio data-icon='inline-start' />
-                      {!host.online
-                        ? '主机离线'
-                        : host.busy
-                          ? '已有活动会话'
-                          : host.kind === 'browser'
-                            ? '观看画面'
-                            : '连接桌面'}
-                    </Button>
+                    {!host.online &&
+                    host.kind === 'browser' &&
+                    host.accessToken?.status === 'active' ? (
+                      <ResumeBrowserHostButton host={host} />
+                    ) : (
+                      <Button
+                        className='w-full'
+                        disabled={!host.online || host.busy || loading}
+                        onClick={() => void connect(host)}
+                      >
+                        <Radio data-icon='inline-start' />
+                        {!host.online
+                          ? '主机离线'
+                          : host.busy
+                            ? '已有活动会话'
+                            : host.kind === 'browser'
+                              ? '观看画面'
+                              : '连接桌面'}
+                      </Button>
+                    )}
                   </CardFooter>
                 </Card>
               ))}

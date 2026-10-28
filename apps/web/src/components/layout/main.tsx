@@ -2,23 +2,16 @@ import { cn } from '@/lib/utils'
 
 type MainProps = React.HTMLAttributes<HTMLElement> & {
   fixed?: boolean
-  fluid?: boolean
   ref?: React.Ref<HTMLElement>
 }
 
-export function Main({ fixed, className, fluid, ...props }: MainProps) {
+export function Main({ fixed, className, ...props }: MainProps) {
   return (
     <main
       data-layout={fixed ? 'fixed' : 'auto'}
       className={cn(
-        'px-3 py-5',
-
-        // If layout is fixed, make the main container flex and grow
+        'w-full min-w-0 page-gutter py-5',
         fixed && 'flex grow flex-col overflow-hidden',
-
-        // If layout is not fluid, set the max-width
-        !fluid &&
-          '@7xl/content:mx-auto @7xl/content:w-full @7xl/content:max-w-7xl',
         className
       )}
       {...props}

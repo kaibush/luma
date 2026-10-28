@@ -22,7 +22,7 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
           <SidebarInset
             className={cn(
               // Set content container, so we can use container queries
-              '@container/content',
+              '@container/content min-w-0',
 
               // If layout is fixed, set the height
               // to 100svh to prevent overflow

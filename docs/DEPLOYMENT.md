@@ -122,6 +122,10 @@ npm run test:native
 
 关联主机的显示名称可在 Token 管理中编辑，保存在主机元数据中；客户端每次接入上报的原名称单独保留，重连不会覆盖自定义显示名称。管理员接口 `PUT /api/manage/hosts/:id/name` 接收 `{ "displayName": "自定义名称" }`（最多 64 个字符，空字符串恢复客户端名称），在线和离线主机均可修改，并记录 `host.rename` 审计。主机响应中的 `name` 为最终显示名称，`reportedName` 为客户端上报名称，`displayName` 为自定义名称。
 
+管理员可通过 `DELETE /api/manage/hosts/:id` 删除离线档案及元数据，成功返回 204，在线或使用中的主机返回 409。删除记录为 `host.delete` 审计，不撤销关联 Token；使用有效密钥再次接入会重新登记。删除操作不能用控制 API Token 代替管理员登录。
+
+`GET /api/manage/audit` 支持 `page`（从 1 开始）、`pageSize`（1–100，不传默认 50）及可选 `snapshot`。响应包含 `events`、`total`、`page`、`pageSize`、`totalPages`、`snapshot` 和 `retentionLimit`。前端默认每页 20 条，翻页沿用服务返回的 `snapshot`，刷新时重新取得最新范围；后端保留最近 1000 条记录，超出部分会随新记录写入清理。
+
 修改 TURN 参数只更新 API 生成连接凭据所用配置，不会自动重配 coturn；更换共享密钥时必须同步修改 TURN 服务。新连接使用更新后的参数。
 
 浏览器回归测试 `npm run test:e2e` / `npm run test:native` 需要通过环境变量提供 `SMOKE_USERNAME`、`SMOKE_PASSWORD`，不会自动初始化线上账号。`node scripts/auth-smoke.mjs` 仅用于 localhost:5173 对应的全新、可丢弃测试数据库，验证完整向导与管理操作，禁止连接生产数据。

@@ -39,6 +39,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { Main } from '@/components/layout/main'
 import { PasswordInput } from '@/components/password-input'
 import { request } from '@/features/access/auth'
 import { signaling, sendSignal } from './api'
@@ -47,24 +48,40 @@ import { RemotePeer } from './peer'
 function browserDeviceId() {
   if (!globalThis.crypto?.randomUUID) return undefined
   const key = 'remote-browser-device-id'
+  const valid = (value: string | null): value is string =>
+    !!value &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value
+    )
+  let id: string | undefined
+  // Preserve existing tabs' identities while allowing a reopened browser to
+  // reconnect to its previous card instead of creating another offline entry.
   try {
     const existing = sessionStorage.getItem(key)
-    if (
-      existing &&
-      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-        existing
-      )
-    )
-      return existing
-    const id = crypto.randomUUID()
-    sessionStorage.setItem(key, id)
-    return id
+    if (valid(existing)) id = existing
   } catch {
-    return crypto.randomUUID()
+    /* Persistent storage may still be available. */
   }
+  try {
+    const existing = localStorage.getItem(key)
+    id ??= valid(existing) ? existing : crypto.randomUUID()
+    localStorage.setItem(key, id)
+  } catch {
+    /* Keep a session identity if persistent storage is unavailable. */
+  }
+  id ??= crypto.randomUUID()
+  try {
+    sessionStorage.setItem(key, id)
+  } catch {
+    /* The identity remains stable for this mounted sharing page. */
+  }
+  return id
 }
 
 export function BrowserHost() {
+  const [resumeHostId] = useState(
+    () => new URLSearchParams(location.search).get('resume') || undefined
+  )
   const [deviceId] = useState(browserDeviceId)
   const [availableTokens, setAvailableTokens] = useState<AccessToken[]>([])
   const [selectedToken, setSelectedToken] = useState('')
@@ -76,7 +93,9 @@ export function BrowserHost() {
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [event, setEvent] = useState('等待输入')
-  const [panel, setPanel] = useState<'install' | 'browser' | null>(null)
+  const [panel, setPanel] = useState<'install' | 'browser' | null>(
+    resumeHostId ? 'browser' : null
+  )
   const resources = useRef<{
     stream?: MediaStream
     ws?: WebSocket
@@ -153,12 +172,16 @@ export function BrowserHost() {
     const generation = resources.current.generation
     setKeyBusy(true)
     try {
-      const result = await request<{ name: string }>(
-        '/auth/host-token/verify',
-        { token: token.trim() }
-      )
+      const result = await request<{
+        name: string
+        host?: { id: string; name: string }
+      }>('/auth/host-token/verify', {
+        token: token.trim(),
+        ...(resumeHostId ? { resumeHostId } : {}),
+      })
       if (resources.current.generation !== generation) return
       setVerifiedToken(token.trim())
+      if (result.host) setName(result.host.name)
       setState(`密钥已验证：${result.name}。请继续选择屏幕。`)
     } catch (e) {
       if (resources.current.generation === generation) {
@@ -224,6 +247,7 @@ export function BrowserHost() {
           role: 'host',
           kind: 'browser',
           deviceId,
+          ...(resumeHostId ? { resumeHostId } : {}),
           token: token.trim(),
           name: name.trim(),
         },
@@ -293,9 +317,11 @@ export function BrowserHost() {
             setError(
               closeEvent.reason === 'Device already connected'
                 ? '此浏览器共享已在其他页面接入，请先停止另一页面的共享。'
-                : closeEvent.code === 1008
-                  ? '主机密钥无效、已过期或被撤销。请使用用途为「主机」的密钥，不能填写管理员密码或控制端密钥。'
-                  : '主机连接已断开，请检查网络后重新选择屏幕共享。'
+                : closeEvent.reason === 'Host unavailable'
+                  ? '无法恢复此浏览器主机，请确认档案仍存在并使用原主机密钥。'
+                  : closeEvent.code === 1008
+                    ? '主机密钥无效、已过期或被撤销。请使用用途为「主机」的密钥，不能填写管理员密码或控制端密钥。'
+                    : '主机连接已断开，请检查网络后重新选择屏幕共享。'
             )
           }
         }
@@ -317,7 +343,7 @@ export function BrowserHost() {
     }
   }
   return (
-    <main className='mx-auto flex max-w-4xl flex-col gap-6 p-3 md:p-4'>
+    <Main className='flex flex-col gap-6'>
       <div className='flex items-center justify-between'>
         <Button variant='ghost' asChild>
           <a href='/'>
@@ -484,7 +510,9 @@ export function BrowserHost() {
                 <CardHeader>
                   <CardTitle>浏览器主机接入</CardTitle>
                   <CardDescription>
-                    先选择或粘贴主机密钥并验证，再选择要共享的屏幕。
+                    {resumeHostId
+                      ? '正在恢复已有主机。请使用原主机密钥，验证后重新选择这台电脑的屏幕。'
+                      : '先选择或粘贴主机密钥并验证，再选择要共享的屏幕。关闭后重新接入会复用这台浏览器的主机卡片。'}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -691,6 +719,6 @@ export function BrowserHost() {
           )}
         </DialogContent>
       </Dialog>
-    </main>
+    </Main>
   )
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { getWorkspaceName } from '@/config/branding'
 import {
   Copy,
   KeyRound,
@@ -43,6 +44,7 @@ import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { PasswordInput } from '@/components/password-input'
 import { ThemeSwitch } from '@/components/theme-switch'
+import { AuditLog } from './audit-log'
 import { request, useRemoteAuth, type ConnectionSettings } from './auth'
 import { SettingsFields } from './settings-fields'
 import { TokenManagement } from './token-management'
@@ -53,13 +55,6 @@ interface Connection {
   expiresAt: number
   quality: string
   connected: boolean
-}
-interface AuditEvent {
-  id: number
-  time: number
-  actor: string
-  action: string
-  detail: string
 }
 const date = (value: number | null) =>
   value ? new Date(value).toLocaleString() : '—'
@@ -147,8 +142,7 @@ export function ManagementPage({
   const { state, refresh, logout } = useRemoteAuth()
   const [settings, setSettings] = useState<ConnectionSettings | null>(null),
     [secret, setSecret] = useState(''),
-    [connections, setConnections] = useState<Connection[]>([]),
-    [audit, setAudit] = useState<AuditEvent[]>([])
+    [connections, setConnections] = useState<Connection[]>([])
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false)
   const [revealed, setRevealed] = useState<{
@@ -159,25 +153,24 @@ export function ManagementPage({
     [password, setPassword] = useState(''),
     [confirm, setConfirm] = useState('')
   const load = async () => {
-    const [c, a] = await Promise.all([
-      request<{ connections: Connection[] }>('/manage/connections'),
-      request<{ events: AuditEvent[] }>('/manage/audit'),
-    ])
+    const c = await request<{ connections: Connection[] }>(
+      '/manage/connections'
+    )
     setConnections(c.connections)
-    setAudit(a.events)
   }
   useEffect(() => {
     let disposed = false
     void Promise.all([
       request<{ settings: ConnectionSettings }>('/manage/settings'),
       request<{ connections: Connection[] }>('/manage/connections'),
-      request<{ events: AuditEvent[] }>('/manage/audit'),
     ])
-      .then(([s, c, a]) => {
+      .then(([s, c]) => {
         if (!disposed) {
-          setSettings(s.settings)
+          setSettings({
+            ...s.settings,
+            workspaceName: getWorkspaceName(s.settings.workspaceName),
+          })
           setConnections(c.connections)
-          setAudit(a.events)
         }
       })
       .catch((e) => {
@@ -240,7 +233,12 @@ export function ManagementPage({
                     { settings, turnSecret: secret || undefined },
                     'PUT'
                   )
-                  setSettings(result.settings)
+                  setSettings({
+                    ...result.settings,
+                    workspaceName: getWorkspaceName(
+                      result.settings.workspaceName
+                    ),
+                  })
                   setSecret('')
                   await refresh()
                   toast.success('设置已保存，将用于新连接')
@@ -416,45 +414,7 @@ export function ManagementPage({
             </div>
           </form>
         )}
-        {section === 'audit' && (
-          <div className='flex flex-col gap-4'>
-            {audit.length ? (
-              <div className='overflow-hidden rounded-xl border bg-card'>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>时间</TableHead>
-                      <TableHead>操作者</TableHead>
-                      <TableHead>事件</TableHead>
-                      <TableHead>详情</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {audit.map((event) => (
-                      <TableRow key={event.id}>
-                        <TableCell>{date(event.time)}</TableCell>
-                        <TableCell>{event.actor}</TableCell>
-                        <TableCell>{event.action}</TableCell>
-                        <TableCell>{event.detail}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            ) : (
-              <p className='text-sm text-muted-foreground'>还没有操作记录。</p>
-            )}
-            <div>
-              <Button
-                variant='outline'
-                disabled={busy}
-                onClick={() => void run(load)}
-              >
-                刷新记录
-              </Button>
-            </div>
-          </div>
-        )}
+        {section === 'audit' && <AuditLog />}
       </Main>
       <Dialog
         open={!!revealed}

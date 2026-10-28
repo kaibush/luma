@@ -6,10 +6,16 @@
 
 @layer base {
   :root {
+    --page-gutter: 1rem;
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-right: env(safe-area-inset-right, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
     --safe-left: env(safe-area-inset-left, 0px);
+  }
+  @media (min-width: 48rem) {
+    :root {
+      --page-gutter: 1.25rem;
+    }
   }
   #root {
     padding: var(--safe-top) var(--safe-right) var(--safe-bottom)
@@ -40,13 +46,17 @@
   }
 
   /* Prevent focus zoom on mobile devices */
-  @media screen and (max-width: 767px) {
+  @media screen and (max-width: 767px), screen and (pointer: coarse) {
     input,
     select,
     textarea {
       font-size: 16px !important;
     }
   }
+}
+
+@utility page-gutter {
+  padding-inline: var(--page-gutter);
 }
 
 @utility container {
@@ -209,12 +219,36 @@
 [data-slot='sidebar-wrapper'] {
   min-height: calc(100svh - var(--safe-top) - var(--safe-bottom));
 }
-[data-slot='sidebar-container'],
+[data-slot='sidebar-container'] {
+  top: var(--safe-top);
+  bottom: var(--safe-bottom);
+  height: calc(100dvh - var(--safe-top) - var(--safe-bottom));
+}
+[data-slot='sidebar'][data-side='left']:not([data-collapsible='offcanvas'])
+  > [data-slot='sidebar-container'] {
+  inset-inline-start: var(--safe-left);
+}
+[data-slot='sidebar'][data-side='right']:not([data-collapsible='offcanvas'])
+  > [data-slot='sidebar-container'] {
+  inset-inline-end: var(--safe-right);
+}
 [data-sidebar='sidebar'][data-mobile='true'] {
   padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
 }
 .header-fixed {
   top: var(--safe-top);
+}
+[data-slot='dialog-content'],
+[data-slot='alert-dialog-content'] {
+  top: calc(50% + (var(--safe-top) - var(--safe-bottom)) / 2);
+  left: calc(50% + (var(--safe-left) - var(--safe-right)) / 2);
+  width: calc(100% - var(--safe-left) - var(--safe-right) - 2rem);
+  max-height: min(
+    85dvh,
+    calc(100dvh - var(--safe-top) - var(--safe-bottom) - 2rem)
+  );
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* The keyboard responds to its own width, including when docked beside video. */

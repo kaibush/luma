@@ -6,12 +6,19 @@ import { BrowserHost } from './host'
 
 vi.mock('./api', () => ({ signaling: vi.fn(), sendSignal: vi.fn() }))
 vi.mock('@/features/access/auth', () => ({ request: vi.fn() }))
+const originalUrl = location.href
 beforeEach(() => {
+  vi.clearAllMocks()
+  sessionStorage.removeItem('remote-browser-device-id')
+  localStorage.removeItem('remote-browser-device-id')
   vi.mocked(request).mockImplementation(async (path) =>
     path === '/auth/me' ? { user: null } : { name: '测试主机密钥' }
   )
 })
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.restoreAllMocks()
+  history.replaceState(null, '', originalUrl)
+})
 
 test('missing host token explains the requirement instead of silently disabling sharing', async () => {
   const capture = vi.spyOn(navigator.mediaDevices, 'getDisplayMedia')
@@ -127,4 +134,78 @@ test('browser host uses the same device identity when sharing again and releases
   expect(calls[0][0]).toEqual(calls[1][0])
   expect(calls[0][0]).toHaveProperty('deviceId')
   expect(tracks.every((track) => track.readyState === 'ended')).toBe(true)
+})
+
+test('reopening a sharing tab reuses its host identity without persisting the host token', async () => {
+  const canvas = document.createElement('canvas')
+  vi.spyOn(navigator.mediaDevices, 'getDisplayMedia').mockImplementation(
+    async () => canvas.captureStream(1)
+  )
+  vi.mocked(signaling).mockImplementation((_auth, onMessage) => {
+    queueMicrotask(() => onMessage({ type: 'ready', hostId: 'saved-host' }))
+    return { close: vi.fn() } as unknown as WebSocket
+  })
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const screen = await render(<BrowserHost />)
+    await screen
+      .getByRole('button', { name: '浏览器接入', exact: true })
+      .click()
+    await screen
+      .getByLabelText('主机密钥', { exact: true })
+      .fill('test-host-token')
+    await screen.getByRole('button', { name: '验证主机密钥' }).click()
+    await screen.getByRole('button', { name: '选择屏幕并上线' }).click()
+    await expect.element(screen.getByText(/已上线：我的电脑/)).toBeVisible()
+    await screen.unmount()
+    sessionStorage.removeItem('remote-browser-device-id')
+  }
+  const calls = vi.mocked(signaling).mock.calls
+  expect(calls).toHaveLength(2)
+  expect(calls[1][0]).toEqual(calls[0][0])
+  expect(JSON.stringify(localStorage)).not.toContain('test-host-token')
+})
+
+test('resume link verifies the original host before capturing and retains its name and identity', async () => {
+  history.replaceState(null, '', `${location.pathname}?resume=original-host`)
+  const capture = vi
+    .spyOn(navigator.mediaDevices, 'getDisplayMedia')
+    .mockImplementation(async () =>
+      document.createElement('canvas').captureStream(1)
+    )
+  vi.mocked(request).mockImplementation(async (path) =>
+    path === '/auth/me'
+      ? { user: null }
+      : {
+          name: '原主机密钥',
+          host: { id: 'original-host', name: '原来的共享电脑' },
+        }
+  )
+  vi.mocked(signaling).mockImplementation((_auth, onMessage) => {
+    queueMicrotask(() => onMessage({ type: 'ready', hostId: 'original-host' }))
+    return { close: vi.fn() } as unknown as WebSocket
+  })
+  const screen = await render(<BrowserHost />)
+  await screen
+    .getByLabelText('主机密钥', { exact: true })
+    .fill('test-host-token')
+  expect(capture).not.toHaveBeenCalled()
+  await screen.getByRole('button', { name: '验证主机密钥' }).click()
+  expect(request).toHaveBeenCalledWith('/auth/host-token/verify', {
+    token: 'test-host-token',
+    resumeHostId: 'original-host',
+  })
+  await expect
+    .element(screen.getByLabelText('共享名称'))
+    .toHaveValue('原来的共享电脑')
+  await screen.getByRole('button', { name: '选择屏幕并上线' }).click()
+  await expect.element(screen.getByText(/已上线：原来的共享电脑/)).toBeVisible()
+  expect(signaling).toHaveBeenCalledWith(
+    expect.objectContaining({
+      resumeHostId: 'original-host',
+      name: '原来的共享电脑',
+    }),
+    expect.any(Function),
+    expect.any(Function)
+  )
+  await screen.getByRole('button', { name: '停止共享', exact: true }).click()
 })

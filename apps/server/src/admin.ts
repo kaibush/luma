@@ -36,10 +36,16 @@ export function registerAdmin(app: FastifyInstance, store: Store, options: {cont
   });
   const limited = { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } };
   app.post('/api/auth/host-token/verify', limited, async (req, reply) => {
-    const parsed = z.object({ token: z.string().trim().min(1).max(256) }).safeParse(req.body);
+    const parsed = z.object({ token: z.string().trim().min(1).max(256), resumeHostId: z.string().min(1).max(128).optional() }).safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: '请填写完整的主机密钥' });
     const principal = store.token(parsed.data.token, 'host');
     if (!principal) return reply.code(400).send({ error: store.hostTokenError(parsed.data.token) });
+    if (parsed.data.resumeHostId) {
+      const host = hosts().find(host => host.id === parsed.data.resumeHostId);
+      if (!host || host.kind !== 'browser' || host.accessToken?.id !== principal.id) return reply.code(400).send({ error: '无法恢复此浏览器主机，请确认档案仍存在并使用原主机密钥' });
+      if (host.online) return reply.code(409).send({ error: '此主机仍在共享，请先停止原页面的共享' });
+      return { name: principal.name, host: { id: host.id, name: host.reportedName || host.name } };
+    }
     return { name: principal.name };
   });
   app.get('/api/auth/me', async req => ({ initialized: store.initialized(), user: req.principal?.kind === 'session' ? store.account() : null, workspaceName: store.settings().workspaceName }));
@@ -107,6 +113,14 @@ export function registerAdmin(app: FastifyInstance, store: Store, options: {cont
     store.audit(req.principal!.name, 'host.rename', `${host.id}: ${parsed.data.displayName || '恢复客户端名称'}`);
     return { host: { ...host, displayName: parsed.data.displayName, name: parsed.data.displayName || host.reportedName || host.name } };
   });
+  app.delete<{Params:{id:string}}>('/api/manage/hosts/:id', async (req, reply) => {
+    const host = hosts().find(host => host.id === req.params.id);
+    if (!host) return reply.code(404).send({ error: '主机不存在或已删除' });
+    if (host.online || host.busy) return reply.code(409).send({ error: '主机仍在线，请先停止浏览器共享或断开客户端，再删除主机' });
+    store.deleteHost(host.id);
+    store.audit(req.principal!.name, 'host.delete', `${host.id}: ${host.name}`);
+    return reply.code(204).send();
+  });
   app.post('/api/manage/tokens', async (req, reply) => {
     const parsed = z.object({name: z.string().trim().min(1).max(64), scope: z.enum(['control','host']), days: z.number().int().min(1).max(365).optional()}).safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({error:'Token 参数无效'});
@@ -158,5 +172,13 @@ export function registerAdmin(app: FastifyInstance, store: Store, options: {cont
     return { ok: true };
   });
   app.get('/api/manage/connections', async () => ({connections: connections()}));
-  app.get('/api/manage/audit', async () => ({events: store.events()}));
+  app.get('/api/manage/audit', async (req, reply) => {
+    const parsed = z.object({
+      page: z.coerce.number().int().min(1).max(1_000_000).default(1),
+      pageSize: z.coerce.number().int().min(1).max(100).default(50),
+      snapshot: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+    }).safeParse(req.query);
+    if (!parsed.success) return reply.code(400).send({ error: '分页参数无效：页码从 1 开始，每页最多 100 条' });
+    return store.events(parsed.data.page, parsed.data.pageSize, parsed.data.snapshot);
+  });
 }

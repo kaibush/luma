@@ -14,7 +14,7 @@ export type DeviceStats = z.infer<typeof deviceStatsSchema> & { sampledAt: numbe
 export const agentFeaturesSchema = z.object({ terminal: z.boolean(), files: z.boolean(), clipboard: z.boolean(), audio: z.boolean(), remoteSharing: z.boolean().optional() });
 export const hostMetadataSchema = z.object({ group: z.string().trim().max(60), note: z.string().trim().max(500) });
 export const authSchema = z.discriminatedUnion('role', [
-  z.object({ type: z.literal('auth'), role: z.literal('host'), token: z.string().max(256), name: z.string().min(1).max(64), kind: z.enum(['browser', 'linux-x11', 'windows']).default('browser'), deviceId: z.string().uuid().optional(), features: agentFeaturesSchema.optional() }),
+  z.object({ type: z.literal('auth'), role: z.literal('host'), token: z.string().max(256), name: z.string().min(1).max(64), kind: z.enum(['browser', 'linux-x11', 'windows']).default('browser'), deviceId: z.string().uuid().optional(), resumeHostId: z.string().min(1).max(128).optional(), features: agentFeaturesSchema.optional() }),
   z.object({ type: z.literal('auth'), role: z.literal('controller'), token: z.string().max(256), sessionId: z.string().uuid() }),
 ]);
 const signalPayloadSchema = z.discriminatedUnion('type', [

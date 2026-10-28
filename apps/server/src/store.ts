@@ -17,6 +17,7 @@ type Credentials = Settings & { turnSecret: string };
 type Account = { username: string; salt: string; passwordHash: string };
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 const derive = (password: string, salt: string) => new Promise<Buffer>((resolve, reject) => scrypt(password, salt, 64, (error, value) => error ? reject(error) : resolve(value)));
+const AUDIT_RETENTION = 1000;
 export class Store {
   readonly db: DatabaseSync;
   private readonly tokenKey: Buffer;
@@ -93,6 +94,13 @@ export class Store {
   hostMetadata(id: string) { return this.get<{ group: string; note: string; lastConnectedAt?: number; displayName?: string }>(`host:${id}`) || { group: '', note: '' }; }
   saveHostMetadata(id: string, value: { group: string; note: string; lastConnectedAt?: number; displayName?: string }) { this.set(`host:${id}`, value); }
   hostName(id: string, reportedName: string) { return this.hostMetadata(id).displayName || reportedName; }
+  deleteHost(id: string) {
+    return this.transaction(() => {
+      const deleted = this.db.prepare('DELETE FROM hosts WHERE id=?').run(id).changes;
+      if (deleted) this.db.prepare('DELETE FROM kv WHERE key=?').run(`host:${id}`);
+      return deleted;
+    });
+  }
   // Persist identity and the last observation, never a socket or an online flag.
   registerHost(host: Host, tokenId: string) {
     const now = Date.now();
@@ -192,8 +200,15 @@ export class Store {
   renameToken(id: string, name: string) { return this.db.prepare('UPDATE tokens SET name=? WHERE id=?').run(name, id).changes; }
   audit(actor: string, action: string, detail: string) {
     this.db.prepare('INSERT INTO audit(time,actor,action,detail) VALUES(?,?,?,?)').run(Date.now(), actor, action, detail);
-    this.db.exec('DELETE FROM audit WHERE id < (SELECT MAX(id)-1000 FROM audit)');
+    this.db.prepare('DELETE FROM audit WHERE id <= (SELECT id FROM audit ORDER BY id DESC LIMIT 1 OFFSET ?)').run(AUDIT_RETENTION);
   }
-  events() { return this.db.prepare('SELECT * FROM audit ORDER BY id DESC LIMIT 50').all(); }
+  events(page = 1, pageSize = 50, snapshot?: number) {
+    snapshot ??= (this.db.prepare('SELECT COALESCE(MAX(id), 0) AS id FROM audit').get() as { id: number }).id;
+    const { total } = this.db.prepare('SELECT COUNT(*) AS total FROM audit WHERE id<=?').get(snapshot) as { total: number };
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    page = Math.min(page, totalPages);
+    const events = this.db.prepare('SELECT * FROM audit WHERE id<=? ORDER BY id DESC LIMIT ? OFFSET ?').all(snapshot, pageSize, (page - 1) * pageSize);
+    return { events, total, page, pageSize, totalPages, snapshot, retentionLimit: AUDIT_RETENTION };
+  }
   close() { this.db.close(); }
 }
