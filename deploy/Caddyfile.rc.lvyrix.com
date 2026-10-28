@@ -1,6 +1,7 @@
 # Imported by /etc/caddy/Caddyfile. Uses the shared access_log snippet.
 rc.lvyrix.com {
 	import access_log
+	import login_guard
 
 	@private path /.env /.env.* /.git /.git/*
 	handle @private {
